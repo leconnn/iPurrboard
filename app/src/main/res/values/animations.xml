@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Settings pages open and close like iOS navigation (see anim/ios_*.xml). -->
+    <style name="IosPushAnimation" parent="@android:style/Animation.Activity">
+        <item name="android:activityOpenEnterAnimation">@anim/ios_push_in</item>
+        <item name="android:activityOpenExitAnimation">@anim/ios_push_out</item>
+        <item name="android:activityCloseEnterAnimation">@anim/ios_pop_in</item>
+        <item name="android:activityCloseExitAnimation">@anim/ios_pop_out</item>
+    </style>
+</resources>

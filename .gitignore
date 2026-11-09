@@ -1,0 +1,63 @@
+# Apple firmware and files extracted from it: personal reference only, never commit
+*.ipsw
+reference/ios-extracted/
+
+# Android / Gradle
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+# Apple key sounds copied from the reference folder (personal use only)
+app/src/main/res/raw/key_press_*.wav
+app/src/main/assets/apple_emoji.bin
+app/src/personal/assets/apple_emoji.bin
+app/src/personal/res/raw/key_press_*.wav
+__pycache__/
+.agents/skills/ipsw/LICENSE.txt
+.agents/skills/ipsw/references/class-dump.md
+.agents/skills/ipsw/references/device.md
+.agents/skills/ipsw/references/diffing.md
+.agents/skills/ipsw/references/download.md
+.agents/skills/ipsw/references/dyld.md
+.agents/skills/ipsw/references/entitlements.md
+.agents/skills/ipsw/references/firmware.md
+.agents/skills/ipsw/references/kernel.md
+.agents/skills/ipsw/references/macho.md
+.agents/skills/ipsw/references/sandbox.md
+.agents/skills/ipsw/references/symbolication.md
+.agents/skills/ipsw/SKILL.md
+.claude/skills/ipsw/LICENSE.txt
+.claude/skills/ipsw/references/class-dump.md
+.claude/skills/ipsw/references/device.md
+.claude/skills/ipsw/references/diffing.md
+.claude/skills/ipsw/references/download.md
+.claude/skills/ipsw/references/dyld.md
+.claude/skills/ipsw/references/entitlements.md
+.claude/skills/ipsw/references/firmware.md
+.claude/skills/ipsw/references/kernel.md
+.claude/skills/ipsw/references/macho.md
+.claude/skills/ipsw/references/sandbox.md
+.claude/skills/ipsw/references/symbolication.md
+.claude/skills/ipsw/SKILL.md
+skills-lock.json
+
+# Release signing (key and passwords stay local)
+keystore.properties
+*.jks
+*.keystore
+
+# Logo drafts (the chosen icon is copied into app resources)
+art/
+
+# Third-party APKs studied for reference (never commit)
+*.apk
+
+# Local Gradle home and Kotlin caches (downloaded tools, never committed)
+.gradle-user/
+.kotlin/
+
+# Local AI-assistant settings and skills
+.claude/
+.agents/
+skills-lock.json

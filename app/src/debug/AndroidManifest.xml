@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Test hook for adb, see DebugPrefsReceiver. -->
+        <receiver
+            android:name=".DebugPrefsReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="dev.leconnn.ioskeyboard.SET_PREF" />
+            </intent-filter>
+        </receiver>
+        <!-- Worst-case test data for the UI, see DebugDataReceiver. -->
+        <receiver
+            android:name=".DebugDataReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="dev.leconnn.ioskeyboard.SEED_DATA" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>
