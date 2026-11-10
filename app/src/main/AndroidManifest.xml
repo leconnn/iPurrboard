@@ -40,6 +40,11 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".WelcomeActivity"
+            android:exported="false"
+            android:label="@string/app_name" />
+
         <!-- Pasted screenshots are served from here to the app they're pasted into. -->
         <provider
             android:name=".ClipImageProvider"

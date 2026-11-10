@@ -30,6 +30,7 @@ import dev.leconnn.ioskeyboard.ui.GlassButton
 import dev.leconnn.ioskeyboard.ui.IosAlert
 import dev.leconnn.ioskeyboard.ui.IosList
 import dev.leconnn.ioskeyboard.ui.IosPage
+import dev.leconnn.ioskeyboard.ui.MiniKeyboard
 import dev.leconnn.ioskeyboard.ui.NavStack
 import dev.leconnn.ioskeyboard.ui.SettingsIcon
 import dev.leconnn.ioskeyboard.ui.SpeakerDrawable
@@ -156,6 +157,13 @@ class SettingsActivity : Activity() {
         val start = saved ?: listOfNotNull(Route(Page.MAIN), linked?.takeIf { it != Page.MAIN }?.let { Route(it) })
         for (r in start) push(r, animated = false)
         setupBack()
+
+        // A fresh install opens on the welcome; Settings is underneath for when it's done.
+        if (savedInstanceState == null && linked == null && WelcomeActivity.shouldShow(this)) {
+            startActivity(Intent(this, WelcomeActivity::class.java))
+            @Suppress("DEPRECATION")
+            overridePendingTransition(0, 0)
+        }
 
         if (intent.getBooleanExtra(EXTRA_REQUEST_MIC, false) && savedInstanceState == null) {
             requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), REQUEST_MIC)
@@ -462,10 +470,10 @@ class SettingsActivity : Activity() {
         val dark = KeyboardTheme.isDark(this)
         list.section("Style")
         list.tilesRow(listOf(
-            IosList.Tile("Classic", prefs.appearance == Prefs.Appearance.CLASSIC, { c, r -> miniKeyboard(c, r, glass = false, dark = dark) }) {
+            IosList.Tile("Classic", prefs.appearance == Prefs.Appearance.CLASSIC, { c, r -> MiniKeyboard.draw(c, r, glass = false, dark = dark) }) {
                 prefs.appearance = Prefs.Appearance.CLASSIC
             },
-            IosList.Tile("Glass", prefs.appearance == Prefs.Appearance.GLASS, { c, r -> miniKeyboard(c, r, glass = true, dark = dark) }) {
+            IosList.Tile("Glass", prefs.appearance == Prefs.Appearance.GLASS, { c, r -> MiniKeyboard.draw(c, r, glass = true, dark = dark) }) {
                 prefs.appearance = Prefs.Appearance.GLASS
             },
         ))
@@ -478,8 +486,8 @@ class SettingsActivity : Activity() {
         val glass = prefs.appearance == Prefs.Appearance.GLASS
         list.section("Light & Dark")
         list.tilesRow(listOf(
-            IosList.Tile("Light", !dark, { c, r -> miniKeyboard(c, r, glass, dark = false) }) { prefs.themeMode = Prefs.ThemeMode.LIGHT },
-            IosList.Tile("Dark", dark, { c, r -> miniKeyboard(c, r, glass, dark = true) }) { prefs.themeMode = Prefs.ThemeMode.DARK },
+            IosList.Tile("Light", !dark, { c, r -> MiniKeyboard.draw(c, r, glass, dark = false) }) { prefs.themeMode = Prefs.ThemeMode.LIGHT },
+            IosList.Tile("Dark", dark, { c, r -> MiniKeyboard.draw(c, r, glass, dark = true) }) { prefs.themeMode = Prefs.ThemeMode.DARK },
         ))
         list.switchRow("Automatic", prefs.themeMode == Prefs.ThemeMode.AUTO) { on ->
             prefs.themeMode = if (on) Prefs.ThemeMode.AUTO else if (dark) Prefs.ThemeMode.DARK else Prefs.ThemeMode.LIGHT
@@ -554,64 +562,6 @@ class SettingsActivity : Activity() {
         }
     }
 
-    /** A tile preview: a little screen with the keyboard at its bottom, in the given look. */
-    private fun miniKeyboard(c: Canvas, r: RectF, glass: Boolean, dark: Boolean) {
-        val p = Paint(Paint.ANTI_ALIAS_FLAG)
-        // The screen: a soft wallpaper behind Glass, plain grouped background behind Classic.
-        if (glass) {
-            p.shader = LinearGradient(r.left, r.top, r.right, r.bottom,
-                if (dark) intArrayOf(0xFF1D3A6E.toInt(), 0xFF4A2A6B.toInt()) else intArrayOf(0xFF8EC5FF.toInt(), 0xFFE0B3FF.toInt()),
-                null, Shader.TileMode.CLAMP)
-        } else {
-            p.color = if (dark) 0xFF000000.toInt() else 0xFFF2F2F7.toInt()
-        }
-        c.drawRect(r, p)
-        p.shader = null
-        // A few lines of "text" at the top.
-        p.color = if (dark) 0x40FFFFFF else 0x30000000
-        val lh = r.height() * 0.035f
-        for (i in 0..2) {
-            val y = r.top + r.height() * (0.12f + i * 0.08f)
-            c.drawRoundRect(r.left + r.width() * 0.12f, y, r.right - r.width() * (0.2f + 0.15f * i), y + lh, lh / 2, lh / 2, p)
-        }
-        // The keyboard.
-        val top = r.top + r.height() * 0.56f
-        val kr = RectF(r.left, top, r.right, r.bottom)
-        val theme = if (glass) null else if (dark) KeyboardTheme.dark else KeyboardTheme.light
-        p.color = when {
-            glass && dark -> 0xB0242527.toInt()
-            glass -> 0xA8E9EAED.toInt()
-            else -> theme!!.background
-        }
-        val corner = if (glass) r.width() * 0.08f else 0f
-        c.drawRoundRect(kr.left, kr.top, kr.right, kr.bottom + corner, corner, corner, p)
-        val keyColor = when {
-            glass && dark -> 0x40FFFFFF
-            glass -> 0xF5FFFFFF.toInt()
-            else -> theme!!.letterKey
-        }
-        val pad = r.width() * 0.035f
-        val gap = r.width() * 0.018f
-        val rows = intArrayOf(10, 9, 7)
-        val rowH = (kr.height() - pad * 2) / 4.4f
-        val kw = (kr.width() - pad * 2 - gap * 9) / 10
-        val rad = if (glass) kw * 0.4f else kw * 0.2f
-        for ((i, n) in rows.withIndex()) {
-            val y = kr.top + pad + i * (rowH + gap)
-            val start = kr.left + (kr.width() - (n * kw + (n - 1) * gap)) / 2
-            for (k in 0 until n) {
-                val x = start + k * (kw + gap)
-                p.color = keyColor
-                c.drawRoundRect(x, y, x + kw, y + rowH, rad, rad, p)
-            }
-        }
-        val y = kr.top + pad + 3 * (rowH + gap)
-        p.color = keyColor
-        c.drawRoundRect(kr.left + pad + kw * 2.5f, y, kr.right - pad - kw * 2.5f, y + rowH, rad, rad, p)
-        p.color = if (glass) keyColor else theme!!.functionKey
-        c.drawRoundRect(kr.left + pad, y, kr.left + pad + kw * 2.2f, y + rowH, rad, rad, p)
-        c.drawRoundRect(kr.right - pad - kw * 2.2f, y, kr.right - pad, y + rowH, rad, rad, p)
-    }
 
     /** Settings › Sounds & Haptics: Keyboard Feedback (iOS's Sound and Haptic), volume and strength. */
     private fun feedback(list: IosList) {
@@ -811,6 +761,8 @@ class SettingsActivity : Activity() {
         list.section()
         list.actionRow("Reset All Settings") { confirmResetToIos() }
         list.actionRow("Reset Keyboard Dictionary") { confirmResetDictionary() }
+        list.section()
+        list.actionRow("Show Welcome Screens") { startActivity(Intent(this, WelcomeActivity::class.java)) }
         list.footer("Reset All Settings turns every setting back to its default and the extras (toolbar, number row, " +
             (if (BuildConfig.GIFS) "GIFs " else "clipboard history ") + "and more) off; text replacements, learned " +
             "words and pinned clips are kept. Reset Keyboard Dictionary deletes the words the keyboard has learned.")

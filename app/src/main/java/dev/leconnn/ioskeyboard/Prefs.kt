@@ -119,6 +119,9 @@ class Prefs private constructor(val raw: SharedPreferences) {
         get() = raw.getInt(KEY_GLASS_TINT, 50).coerceIn(0, 100)
         set(v) = raw.edit().putInt(KEY_GLASS_TINT, v.coerceIn(0, 100)).apply()
 
+    /** The welcome (first-run setup) was finished or skipped; see WelcomeActivity. */
+    var onboarded by bool("onboarded", false)
+
     /** Liquid Glass Show Borders: outline the keys and popups for more separation. */
     var glassBorders by bool(KEY_GLASS_BORDERS, false)
 

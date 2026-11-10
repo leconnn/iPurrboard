@@ -471,3 +471,64 @@ internal fun blend(a: Int, b: Int, t: Float): Int {
     fun ch(s: Int) = (((a shr s) and 0xFF) + (((b shr s) and 0xFF) - ((a shr s) and 0xFF)) * t).toInt()
     return (0xFF shl 24) or (ch(16) shl 16) or (ch(8) shl 8) or ch(0)
 }
+
+/**
+ * The large filled capsule of iOS's Setup Assistant ("Continue"): system blue with white text,
+ * dimming and settling back on a spring when pressed. Disabled, it greys out.
+ */
+@SuppressLint("ViewConstructor")
+class ProminentButton(context: Context, text: String) : View(context) {
+    private val dark = context.isDark()
+    private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val label = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textSize = context.dpf(17f)
+        typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD)
+        textAlign = Paint.Align.CENTER
+    }
+    private val rect = RectF()
+    private var press = 0f
+    private val pressSpring = Spring(0.2f) { press = it; invalidate() }
+
+    var text: String = text
+        set(v) { field = v; contentDescription = v; invalidate() }
+
+    init {
+        isClickable = true
+        contentDescription = text
+    }
+
+    override fun setEnabled(enabled: Boolean) {
+        super.setEnabled(enabled)
+        invalidate()
+    }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), context.dpf(52f).toInt())
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        val s = 1f - 0.03f * press
+        canvas.save()
+        canvas.scale(s, s, width / 2f, height / 2f)
+        rect.set(0f, 0f, width.toFloat(), height.toFloat())
+        fill.color = when {
+            !isEnabled -> if (dark) 0xFF2C2C2E.toInt() else 0xFFE5E5EA.toInt()
+            else -> if (dark) 0xFF0A84FF.toInt() else 0xFF007AFF.toInt()
+        }
+        if (isEnabled) fill.alpha = (255 * (1f - 0.25f * press)).toInt()
+        canvas.drawRoundRect(rect, height / 2f, height / 2f, fill)
+        label.color = if (isEnabled) 0xFFFFFFFF.toInt() else if (dark) 0xFF636366.toInt() else 0xFFAEAEB2.toInt()
+        canvas.drawText(text, width / 2f, height / 2f - (label.descent() + label.ascent()) / 2, label)
+        canvas.restore()
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        if (!isEnabled) return false
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> pressSpring.animateTo(1f)
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> pressSpring.animateTo(0f)
+        }
+        return super.onTouchEvent(e)
+    }
+}

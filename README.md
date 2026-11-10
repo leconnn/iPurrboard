@@ -16,9 +16,9 @@ Android framework views: no AndroidX, no third-party runtime libraries, no ads, 
 Get the latest APK from [Releases](https://github.com/leconnn/iPurrboard/releases), then:
 
 1. Open the APK on your phone and allow installing apps from your browser or file manager if asked.
-2. Open **iPurrboard** and follow the two steps it shows: turn it on in Android's keyboard list, then
-   select it.
-3. Use **Try it** at the top of Settings to test it right away.
+2. Open **iPurrboard**. A short welcome walks you through turning it on in Android's keyboard list,
+   selecting it, and picking its look, layout and a few extras (all changeable later in Settings).
+3. Use **Try It** at the top of Settings to test it right away.
 
 Requires Android 8.0 or newer. The Glass look's background blur needs Android 12 or newer.
 

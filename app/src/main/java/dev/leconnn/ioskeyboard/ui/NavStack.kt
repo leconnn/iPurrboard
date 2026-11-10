@@ -77,9 +77,48 @@ class IosPage(context: Context, val title: String, val largeTitle: Boolean, priv
             bar.setPadding(bars.left, topInset, bars.right, 0)
             // The list scrolls under the bar and (as on iOS) behind the keyboard, padded so every
             // row can still be scrolled into view.
-            scroll.setPadding(bars.left, topInset + barH, bars.right, maxOf(bars.bottom, ime.bottom))
+            bottomInset = maxOf(bars.bottom, ime.bottom)
+            footer?.let { it.setPadding(bars.left, it.paddingTop, bars.right, bottomInset) }
+            scroll.setPadding(bars.left, topInset + barH, bars.right, bottomInset + footerHeight())
             insets
         }
+    }
+
+    private var footer: View? = null
+    private var bottomInset = 0
+
+    private fun footerHeight(): Int {
+        val f = footer ?: return 0
+        f.measure(MeasureSpec.makeMeasureSpec(maxOf(width, resources.displayMetrics.widthPixels), MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
+        return f.measuredHeight - f.paddingBottom
+    }
+
+    /**
+     * A footer pinned to the bottom of the page over the list (the Setup Assistant's Continue
+     * button); the list is padded so it can scroll clear of it.
+     */
+    fun setFooter(v: View) {
+        footer?.let { removeView(it) }
+        footer = v
+        // Content fades out above the footer instead of being cut at its edge.
+        val fade = context.dpf(24f).toInt()
+        v.setPadding(v.paddingLeft, fade, v.paddingRight, v.paddingBottom)
+        v.background = object : android.graphics.drawable.Drawable() {
+            private val paint = android.graphics.Paint()
+            override fun draw(canvas: android.graphics.Canvas) {
+                val b = bounds
+                paint.shader = android.graphics.LinearGradient(0f, b.top.toFloat(), 0f, (b.top + fade).toFloat(),
+                    background and 0x00FFFFFF, background, android.graphics.Shader.TileMode.CLAMP)
+                canvas.drawRect(b, paint)
+            }
+            override fun setAlpha(alpha: Int) = Unit
+            override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) = Unit
+            @Deprecated("Drawable API")
+            override fun getOpacity() = android.graphics.PixelFormat.TRANSLUCENT
+        }
+        addView(v, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
+        requestApplyInsets()
     }
 
     /** The glass back button at the left of the bar. */
