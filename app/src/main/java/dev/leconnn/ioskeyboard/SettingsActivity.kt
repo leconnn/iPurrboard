@@ -148,7 +148,36 @@ class SettingsActivity : Activity() {
             keyboard.setPadding(0, 0, 0, if (keyboard.visibility == View.VISIBLE) bars.bottom else 0)
             insets
         }
-        setContentView(outer)
+        // A cold start from the launcher plays the intro over the app (not with animations off).
+        val intro = savedInstanceState == null && intent.action == Intent.ACTION_MAIN &&
+            Settings.Global.getFloat(contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) > 0f
+        val welcome = savedInstanceState == null && intent.getStringExtra(EXTRA_PAGE) == null && WelcomeActivity.shouldShow(this)
+        if (intro) {
+            val host = FrameLayout(this)
+            host.addView(outer)
+            lateinit var view: dev.leconnn.ioskeyboard.ui.IntroView
+            view = dev.leconnn.ioskeyboard.ui.IntroView(this,
+                onHandOff = { if (welcome) openWelcome() },
+                onDone = { host.removeView(view) })
+            host.addView(view)
+            setContentView(host)
+            // Android 12+: the splash's key is swapped for the intro's at once (no fade between them).
+            view.waitForSplash = Build.VERSION.SDK_INT >= 31
+            if (Build.VERSION.SDK_INT >= 31) splashScreen.setOnExitAnimationListener { splash ->
+                // The splash draws the icon larger than its view; measured on screen, the key is
+                // about 0.79 of the icon view's width.
+                splash.iconView?.let { icon ->
+                    val loc = IntArray(2); icon.getLocationOnScreen(loc)
+                    val mine = IntArray(2); view.getLocationOnScreen(mine)
+                    view.splashKeyWidth = icon.width * SPLASH_KEY_FRACTION
+                    view.splashKey = android.graphics.PointF(loc[0] - mine[0] + icon.width / 2f, loc[1] - mine[1] + icon.height / 2f)
+                }
+                splash.remove()
+                view.begin()
+            }
+        } else {
+            setContentView(outer)
+        }
         ThemeMode.styleBars(this)
 
         // The stack survives a Light / Dark change (recreate); a link from the keyboard can open a page.
@@ -158,16 +187,19 @@ class SettingsActivity : Activity() {
         for (r in start) push(r, animated = false)
         setupBack()
 
-        // A fresh install opens on the welcome; Settings is underneath for when it's done.
-        if (savedInstanceState == null && linked == null && WelcomeActivity.shouldShow(this)) {
-            startActivity(Intent(this, WelcomeActivity::class.java))
-            @Suppress("DEPRECATION")
-            overridePendingTransition(0, 0)
-        }
+        // A fresh install opens on the welcome (after the intro, when it plays); Settings is
+        // underneath for when it's done.
+        if (welcome && !intro) openWelcome()
 
         if (intent.getBooleanExtra(EXTRA_REQUEST_MIC, false) && savedInstanceState == null) {
             requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), REQUEST_MIC)
         }
+    }
+
+    private fun openWelcome() {
+        startActivity(Intent(this, WelcomeActivity::class.java))
+        @Suppress("DEPRECATION")
+        overridePendingTransition(android.R.anim.fade_in, 0)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -867,6 +899,8 @@ class SettingsActivity : Activity() {
         /** Tint Amount snaps to Default within this many steps of the middle. */
         private const val TINT_SNAP = 4
         private const val STATE_ROUTES = "routes"
+        /** The splash's key as a fraction of its icon view's width (measured). */
+        private const val SPLASH_KEY_FRACTION = 0.79f
         /** Set by the keyboard's dictation panel: ask for the microphone permission on arrival. */
         const val EXTRA_REQUEST_MIC = "requestMic"
         const val EXTRA_PAGE = "page"

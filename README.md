@@ -28,6 +28,7 @@ Requires Android 8.0 or newer. The Glass look's background blur needs Android 12
 - iPhone key layout and sizes, key previews, long-press accents, caps lock and auto-capitalisation.
 - Predictive text, autocorrection that learns from you, Check Spelling and inline predictions.
 - Slide to type, a space-bar trackpad, Smart Punctuation, the "." shortcut and text replacements.
+- Select text and press Shift to change its case: lowercase, Title Case, ALL CAPS, then back.
 - Shows Math Results as you type a sum (`12*4=`).
 
 **Look**
@@ -38,6 +39,8 @@ Requires Android 8.0 or newer. The Glass look's background blur needs Android 12
 - Optional number row, one-handed mode and adjustable keyboard height.
 - A settings app laid out like iOS Settings, with the same Keyboard page, swipe-back navigation
   and iOS-style switches and sliders.
+- A short intro on launch: the keycap logo gets pressed, pops and the name types itself in
+  (tap to skip; off when Android's animations are turned off).
 
 **Extras**
 - **Paste suggestion:** what you just copied appears above the keys ("paste from Threads"); tap to

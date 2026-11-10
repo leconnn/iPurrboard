@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+ shows a splash before the app draws: give it the launch intro's ground so the
+         intro starts from the same screen. -->
+    <style name="AppTheme" parent="android:Theme.DeviceDefault.Light.NoActionBar">
+        <item name="android:windowAnimationStyle">@style/IosPushAnimation</item>
+        <item name="android:windowSplashScreenBackground">#F2F2F7</item>
+    </style>
+</resources>

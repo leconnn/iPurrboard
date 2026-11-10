@@ -84,6 +84,11 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         fun onCursorMove(dx: Int, dy: Int)
         fun onFeedback(kind: KeyKind)
         fun onShiftChanged(state: Glyphs.ShiftState)
+        /**
+         * Shift was tapped: with text selected, change its case instead (Gboard's
+         * recapitalization) and return true, leaving the shift key as it was.
+         */
+        fun onRecapitalize(): Boolean = false
         /** The chevron in the empty strip of the one-handed keyboard was tapped. */
         fun onOneHandedOff() = Unit
         /**
@@ -2191,6 +2196,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         listener.onFeedback(key.kind)
         when (key.kind) {
             KeyKind.SHIFT -> {
+                if (listener.onRecapitalize()) return
                 val now = SystemClock.uptimeMillis()
                 val next = when {
                     !capsLockEnabled -> if (shift == Glyphs.ShiftState.OFF) Glyphs.ShiftState.ON else Glyphs.ShiftState.OFF

@@ -69,6 +69,12 @@ class IosKeyboardService : InputMethodService(), KeyboardView.Listener {
 
     /** True while the app reports a non-empty selection. */
     private var hasSelection = false
+    /** The current selection (start may be after end), for Shift's case change. */
+    private var selStart = 0
+    private var selEnd = 0
+    /** Shift's case cycle for the selection it last changed (at [recapStart]). */
+    private var recap: dev.leconnn.ioskeyboard.text.Recapitalize? = null
+    private var recapStart = -1
     /** Ends the pause on suggestion refreshes once delete stops repeating. */
     private val deleteSettled = Runnable { composer.deferRefresh = false }
 
@@ -606,6 +612,9 @@ class IosKeyboardService : InputMethodService(), KeyboardView.Listener {
             it.onSelectionUpdate(info.initialSelStart, info.initialSelEnd)
         }
         hasSelection = info.initialSelStart != info.initialSelEnd
+        selStart = info.initialSelStart
+        selEnd = info.initialSelEnd
+        recap = null
         readClipboard()
         composer.reset()
         applyAppearance()
@@ -662,6 +671,8 @@ class IosKeyboardService : InputMethodService(), KeyboardView.Listener {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
         ic?.onSelectionUpdate(newSelStart, newSelEnd)
         hasSelection = newSelStart != newSelEnd
+        selStart = newSelStart
+        selEnd = newSelEnd
         // The editing panel greys Copy without a selection.
         if (::view.isInitialized) view.invalidate()
         composer.onSelectionChanged(newSelStart, newSelEnd, candidatesStart, candidatesEnd)
@@ -1279,6 +1290,32 @@ class IosKeyboardService : InputMethodService(), KeyboardView.Listener {
     override fun onFeedback(kind: KeyKind) {
         sounds.play(kind)
         if (prefs.haptic) haptics.tap()
+    }
+
+    /**
+     * Shift with text selected: the selection moves to its next case (lowercase, Title Case,
+     * ALL CAPS, then back to how it was), as in Gboard, and stays selected for the next press.
+     */
+    override fun onRecapitalize(): Boolean {
+        if (!hasSelection || traits.isPassword) return false
+        val c = ic ?: return false
+        val start = minOf(selStart, selEnd)
+        val end = maxOf(selStart, selEnd)
+        if (end - start > dev.leconnn.ioskeyboard.text.Recapitalize.MAX_LENGTH) return false
+        val selected = c.getSelectedText(0)?.toString()
+        if (selected.isNullOrEmpty()) return false
+        // Pressing again on the selection it just changed continues the cycle; anything else starts anew.
+        val r = recap?.takeIf { recapStart == start && it.current == selected }
+            ?: dev.leconnn.ioskeyboard.text.Recapitalize(selected, java.util.Locale.forLanguageTag(prefs.keyboard.speechTag))
+                .also { recap = it; recapStart = start }
+        val text = r.next()
+        if (text == selected) return true
+        composer.reset()
+        c.beginBatchEdit()
+        c.commitText(text, 1)
+        c.setSelection(start, start + text.length)
+        c.endBatchEdit()
+        return true
     }
 
     override fun onShiftChanged(state: Glyphs.ShiftState) {

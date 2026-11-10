@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Background of the launcher artwork, so the adaptive icon's outer margin matches it. -->
-    <color name="ic_launcher_background">#D4B3AD</color>
+    <color name="ic_launcher_background">#24171A</color>
 </resources>
