@@ -5,9 +5,9 @@ package dev.leconnn.ioskeyboard
  * repository root (same sections, same wording) and with what the code actually does.
  */
 object PrivacyPolicy {
-    const val UPDATED = "November 9, 2026"
+    const val UPDATED = "November 10, 2026"
 
-    /** The features that go online in this build (the public build has no GIFs). */
+    /** The features that go online in this build (GIFs only where a build includes them). */
     private val online = if (BuildConfig.GIFS) "GIFs and Emoji Kitchen stickers" else "Emoji Kitchen stickers"
 
     val SUMMARY = "iPurrboard has no accounts, ads, analytics or tracking. What you type stays on " +

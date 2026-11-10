@@ -55,15 +55,14 @@ class KeyboardTheme(
             accentText = 0xFFFFFFFF.toInt(),
         )
 
-        // iOS 27 Liquid Glass (tinted), measured from an iOS 27 screenshot: a mostly opaque
-        // panel (the app only faintly shows through the blur), every key the same soft colour
-        // (function keys included), no key shadows and no bright rim.
+        // iOS 27 Liquid Glass: a see-through, blurred panel (the app's colours show through),
+        // every key the same soft colour (function keys included), no key shadows and no rim.
         private fun glassLight(blur: Boolean) = KeyboardTheme(
             background = 0, letterKey = 0xF2FFFFFF.toInt(), functionKey = 0xF2FFFFFF.toInt(),
             pressedLetterKey = 0xFFD9DADE.toInt(), pressedFunctionKey = 0xFFD9DADE.toInt(),
             keyShadow = 0, text = 0xFF000000.toInt(),
             accent = 0xFF007AFF.toInt(), accentText = 0xFFFFFFFF.toInt(), glass = true,
-            panelTint = if (blur) 0xE0E9EAED.toInt() else 0xF2E9EAED.toInt(),
+            panelTint = if (blur) 0xA6E9EAED.toInt() else 0xD9E9EAED.toInt(),
             rim = 0, popup = 0xFFFFFFFF.toInt(),
         )
 
@@ -72,7 +71,7 @@ class KeyboardTheme(
             pressedLetterKey = 0x59FFFFFF, pressedFunctionKey = 0x59FFFFFF,
             keyShadow = 0, text = 0xFFFFFFFF.toInt(),
             accent = 0xFF0A84FF.toInt(), accentText = 0xFFFFFFFF.toInt(), glass = true,
-            panelTint = if (blur) 0xE6242527.toInt() else 0xF2222325.toInt(),
+            panelTint = if (blur) 0x99242527.toInt() else 0xCC222325.toInt(),
             rim = 0, popup = 0xFF464749.toInt(),
         )
 

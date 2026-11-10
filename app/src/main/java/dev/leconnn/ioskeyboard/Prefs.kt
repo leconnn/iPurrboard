@@ -102,8 +102,8 @@ class Prefs private constructor(val raw: SharedPreferences) {
     var numberRow by bool("numberRow", false)
     /** Show the number row in password fields even when [numberRow] is off. */
     var numberRowPasswords by bool("numberRowPasswords", false)
-    /** Draw the emoji panel with Apple's art when the personal-use asset is present. */
-    var appleEmoji by bool("appleEmoji", true)
+    /** Draw the emoji panel with the build's emoji image pack, when it has one. */
+    var emojiArt by bool("emojiArt", true)
 
     enum class Appearance { CLASSIC, GLASS }
 
@@ -134,6 +134,20 @@ class Prefs private constructor(val raw: SharedPreferences) {
     enum class Height(val scale: Float, val label: String) {
         SHORT(0.88f, "Short"), DEFAULT(1f, "Default"), TALL(1.12f, "Tall"), EXTRA_TALL(1.24f, "Extra Tall"),
     }
+
+    /** Size of the letter preview that pops up over a pressed key (Settings > Typing). */
+    enum class PreviewSize(val scale: Float, val label: String) {
+        SMALL(0.85f, "Small"), DEFAULT(1f, "Default"), LARGE(1.18f, "Large"),
+    }
+
+    var previewSize: PreviewSize
+        get() = runCatching { PreviewSize.valueOf(raw.getString(KEY_PREVIEW_SIZE, null) ?: "") }.getOrDefault(PreviewSize.DEFAULT)
+        set(v) = raw.edit().putString(KEY_PREVIEW_SIZE, v.name).apply()
+
+    /** How a recently copied item shows above the keys: a banner across the bar (iPhone) or chips (Gboard). */
+    var copiedStyle: KeyStyle
+        get() = runCatching { KeyStyle.valueOf(raw.getString(KEY_COPIED_STYLE, null) ?: "") }.getOrDefault(KeyStyle.IOS)
+        set(v) = raw.edit().putString(KEY_COPIED_STYLE, v.name).apply()
 
     var keyboardHeight: Height
         get() = runCatching { Height.valueOf(raw.getString(KEY_HEIGHT, null) ?: "") }.getOrDefault(Height.DEFAULT)
@@ -255,7 +269,7 @@ class Prefs private constructor(val raw: SharedPreferences) {
             // iOS 27 offers what you just copied above the keys.
             putBoolean("showCopiedItems", true)
             putBoolean("voiceTyping", true)
-            putBoolean("appleEmoji", true)
+            putBoolean("emojiArt", true)
             putBoolean("blockOffensive", true)
             // Not on iOS.
             putBoolean("emojiKitchen", false)
@@ -279,6 +293,8 @@ class Prefs private constructor(val raw: SharedPreferences) {
             putString(KEY_APPEARANCE, Appearance.GLASS.name)
             putString(KEY_THEME_MODE, ThemeMode.AUTO.name)
             putString(KEY_HEIGHT, Height.DEFAULT.name)
+            putString(KEY_PREVIEW_SIZE, PreviewSize.DEFAULT.name)
+            putString(KEY_COPIED_STYLE, KeyStyle.IOS.name)
             putString(KEY_ONE_HANDED, OneHanded.OFF.name)
             putString(KEY_LONG_PRESS, LongPress.DEFAULT.name)
             putString(KEY_VIBRATION, Vibration.MEDIUM.name)
@@ -300,6 +316,8 @@ class Prefs private constructor(val raw: SharedPreferences) {
         const val KEY_THEME_MODE = "themeMode"
         private const val KEY_LONG_PRESS = "longPressDelay"
         private const val KEY_HEIGHT = "keyboardHeight"
+        private const val KEY_PREVIEW_SIZE = "previewSize"
+        private const val KEY_COPIED_STYLE = "copiedStyle"
         private const val KEY_SYMBOL_HINTS = "symbolHints"
         private const val KEY_RETENTION = "clipboardRetention"
         const val KEY_KEYBOARDS = "keyboards"

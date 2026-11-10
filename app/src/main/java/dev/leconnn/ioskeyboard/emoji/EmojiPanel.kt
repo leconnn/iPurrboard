@@ -40,9 +40,9 @@ class EmojiPanel(private val host: View, private val callbacks: Callbacks) {
     var theme: KeyboardTheme? = null
     /** Hold time before the skin-tone panel opens. */
     var longPressMs = 400L
-    /** Draw with Apple's art (if the asset exists) instead of the system emoji font. */
-    var appleStyle = true
-    private var apple: AppleEmojiImages? = null
+    /** Draw with the build's emoji image pack (if it has one) instead of the system emoji font. */
+    var artStyle = true
+    private var art: EmojiArt? = null
     private val drawRect = RectF()
 
     private val prefs = Prefs.get(host.context)
@@ -132,10 +132,10 @@ class EmojiPanel(private val host: View, private val callbacks: Callbacks) {
         val ctx = host.context.applicationContext
         Executors.newSingleThreadExecutor().execute {
             val loaded = EmojiData.load(ctx)
-            val art = AppleEmojiImages.open(ctx)
+            val pack = EmojiArt.open(ctx)
             handler.post {
                 data = loaded
-                apple = art
+                art = pack
                 loading = false
                 if (showWhenLoaded) { rebuild(loaded); host.invalidate() }
             }
@@ -282,7 +282,7 @@ class EmojiPanel(private val host: View, private val callbacks: Callbacks) {
     private fun display(e: EmojiData.Emoji) = prefs.emojiTone(e.base) ?: e.base
 
     /** Apple art when enabled and available, else the system font. [fontShift] = ascent + descent. */
-    /** Draws [emoji] centred on ([cx], [cy]) at [sizePx], with Apple's art when that's on (search results). */
+    /** Draws [emoji] centred on ([cx], [cy]) at [sizePx], with the image pack when that's on (search results). */
     fun drawEmojiAt(canvas: Canvas, emoji: String, cx: Float, cy: Float, sizePx: Float) {
         emojiPaint.textSize = sizePx
         val fm = emojiPaint.fontMetrics
@@ -290,9 +290,9 @@ class EmojiPanel(private val host: View, private val callbacks: Callbacks) {
     }
 
     private fun drawEmoji(canvas: Canvas, emoji: String, cx: Float, cy: Float, sizePx: Float, fontShift: Float, filter: Paint? = null) {
-        val art = apple
-        if (appleStyle && art != null) {
-            // Apple's art fills its square; scale it to match the font's visual size.
+        val art = art
+        if (artStyle && art != null) {
+            // Pack images fill their square; scale them to match the font's visual size.
             val half = sizePx * 0.62f
             drawRect.set(cx - half, cy - half, cx + half, cy + half)
             if (art.draw(canvas, emoji, drawRect, filter)) return

@@ -6,7 +6,7 @@
 keyboard, plus a few extras people love from Gboard. It's written from scratch in Kotlin on plain
 Android framework views: no AndroidX, no third-party runtime libraries, no ads, no tracking.
 
-> **Beta.** iPurrboard is a personal project in active development. Expect rough edges, and
+> **Beta.** iPurrboard is a hobby project in active development. Expect rough edges, and
 > please [open an issue](https://github.com/leconnn/iPurrboard/issues) if something breaks.
 >
 > Not affiliated with or endorsed by Apple or Google.
@@ -29,8 +29,6 @@ Requires Android 8.0 or newer. The Glass look's background blur needs Android 12
 - Predictive text, autocorrection that learns from you, Check Spelling and inline predictions.
 - Slide to type, a space-bar trackpad, Smart Punctuation, the "." shortcut and text replacements.
 - Shows Math Results as you type a sum (`12*4=`).
-- **English and Filipino (Tagalog)**: with both on, you can mix them (Taglish) without switching.
-  Hold the emoji key to switch languages.
 
 **Look**
 - **Glass** (translucent, blurred, rounded) or **Classic** appearance, light or dark.
@@ -63,23 +61,12 @@ Read the full [privacy policy](PRIVACY.md) (also in the app: Settings > Privacy 
 You need JDK 17 and the Android SDK (compile SDK 36).
 
 ```sh
-./gradlew assemblePublicRelease    # app/build/outputs/apk/public/release/iPurrboard-<version>-public-release.apk
-./gradlew testPublicDebugUnitTest  # unit tests
+./gradlew assembleRelease    # app/build/outputs/apk/release/iPurrboard-<version>-release.apk
+./gradlew test               # unit tests
 ```
 
-There are two build variants:
-
-| Variant | What it contains |
-|---|---|
-| `public` | The app as released here. No GIFs, no third-party assets. |
-| `personal` | Adds GIF search (needs your own GIPHY key) and optional assets you provide yourself in `app/src/personal/` (gitignored, never part of this repository). |
-
-Optional local settings (both files are gitignored):
-- `local.properties`: `giphy.apiKey=...` for GIFs in the personal variant.
-- `keystore.properties`: `storeFile`, `storePassword`, `keyAlias` and `keyPassword` to sign
-  release builds.
-
-The public release build fails if a personal-use file ever ends up in it.
+To sign release builds, add a `keystore.properties` file (gitignored) next to `build.gradle.kts`
+with `storeFile`, `storePassword`, `keyAlias` and `keyPassword`.
 
 ## Project layout
 
@@ -97,11 +84,14 @@ tools/                    scripts that build the assets from their sources
 
 ## Known limitations
 
-- Two languages so far (English and Filipino), both on the QWERTY layout. The settings app is in
-  English.
-- The Filipino dictionary is smaller than the English one (about 23,000 words).
 - The keyboard's Glass corners show whatever the app draws behind the keyboard; in apps with a
   plain black background they look dark.
+
+## License
+
+The source code is released under the [MIT License](LICENSE). The word lists and other data files
+in `app/src/main/assets` are adaptations of the works credited below and stay under their own
+licences.
 
 ## Credits and licences
 
@@ -109,23 +99,22 @@ tools/                    scripts that build the assets from their sources
   (`en_50k`, OpenSubtitles 2018) by Hermit Dave,
   [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). The filtered
   `assets/dict/en.tsv` is shared under the same licence.
-- **Filipino word list:** `assets/dict/tl.tsv` combines FrequencyWords `tl` (OpenSubtitles 2018,
+- **Additional word list:** `assets/dict/tl.tsv` combines FrequencyWords `tl` (OpenSubtitles 2018,
   CC BY-SA 4.0, Hermit Dave), the [Tatoeba Project](https://tatoeba.org)'s Tagalog sentences
   (CC BY 2.0 FR) and the [Leipzig Corpora Collection](https://wortschatz.uni-leipzig.de)'s
   `tgl_wikipedia_2021_100K` ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)). Shared
   under CC BY-SA 4.0.
 - **Next-word predictions:** word pairs counted from the [Tatoeba Project](https://tatoeba.org)'s
-  English and Tagalog sentences, [CC BY 2.0 FR](https://creativecommons.org/licenses/by/2.0/fr/).
+  sentences, [CC BY 2.0 FR](https://creativecommons.org/licenses/by/2.0/fr/).
 - **Offensive-word lists:** adapted from
   [LDNOOBW](https://github.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words)
   (`en` and `fil`), [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), Shutterstock, Inc.
-  and contributors. The Filipino list adds common Filipino profanity.
-- **Emoji data, names and search:** Unicode's `emoji-test.txt` and CLDR annotations (English and
-  Filipino), [Unicode License](https://www.unicode.org/license.txt).
+  and contributors, with a few additions.
+- **Emoji data, names and search:** Unicode's `emoji-test.txt` and CLDR annotations,
+  [Unicode License](https://www.unicode.org/license.txt).
 - **Emoji Kitchen:** the index of which pairs exist comes from
   [xsalazar/emoji-kitchen-backend](https://github.com/xsalazar/emoji-kitchen-backend); the sticker
   artwork is Google's and is loaded from its servers, not included.
-- **GIFs** (personal variant only): served by [GIPHY](https://giphy.com).
 - **Gboard** was studied as a reference for features. No Gboard code or assets are included.
 - **Trademarks:** iPhone and iOS are trademarks of Apple Inc.; Gboard is a trademark of Google LLC.
   iPurrboard is an independent project, not affiliated with or endorsed by either.

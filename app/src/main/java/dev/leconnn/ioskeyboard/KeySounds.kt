@@ -7,8 +7,8 @@ import android.media.AudioManager
 import android.media.SoundPool
 
 /**
- * Key clicks. Uses res/raw/key_press_click / key_press_delete / key_press_modifier when present
- * (copy them from reference/ios-extracted/sounds; they are gitignored), otherwise falls back to
+ * Key clicks. Uses res/raw/key_press_click / key_press_delete / key_press_modifier when a build
+ * includes them (optional, not part of this repository), otherwise falls back to
  * Android's own keypress sound effects. Silent when the ringer is silent or on vibrate, as on iOS.
  */
 class KeySounds(private val context: Context) {

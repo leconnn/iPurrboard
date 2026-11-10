@@ -123,10 +123,11 @@ class IosKeyboardService : InputMethodService(), KeyboardView.Listener {
         applyAppearance()
         view.spec = prefs.spec(password = traits.isPassword)
         view.characterPreview = prefs.characterPreview
+        view.previewScale = prefs.previewSize.scale
         view.longPressMs = prefs.longPressDelay.ms
         view.capsLockEnabled = prefs.capsLock
         view.oneHanded = prefs.oneHanded
-        view.appleEmoji = prefs.appleEmoji
+        view.emojiArt = prefs.emojiArt
         view.emojiStyle = prefs.emojiLayout
         view.clipboardStyle = prefs.clipboardLayout
         view.gifStyle = prefs.gifLayout
@@ -239,8 +240,8 @@ class IosKeyboardService : InputMethodService(), KeyboardView.Listener {
             details.map { Chip(oneLine(it.text), chipIcon(it.kind)) }
     }
 
-    /** The Standard (iPhone) layout shows iOS 27's paste suggestion; Extended shows Gboard's chips. */
-    private val iosPasteStyle get() = prefs.keyLayout == KeyStyle.IOS
+    /** Settings > Clipboard > Copied Items Style: iOS 27's paste banner, or Gboard's chips. */
+    private val iosPasteStyle get() = prefs.copiedStyle == KeyStyle.IOS
 
     /** An app's name ("Threads"), or null if it can't be looked up. */
     private fun appLabel(pkg: String): String? {
@@ -287,7 +288,6 @@ class IosKeyboardService : InputMethodService(), KeyboardView.Listener {
     }
 
     override fun onChip(index: Int) {
-        lastKeyAt = SystemClock.uptimeMillis()
         val action = chipActions.getOrNull(index) ?: return
         action()
         showSuggestions()
@@ -627,7 +627,7 @@ class IosKeyboardService : InputMethodService(), KeyboardView.Listener {
         // Like iOS, caps lock and a manual shift end when the keyboard opens in a new field, and
         // when the app empties the field it's in: replacing its text restarts input, which is
         // how most chat apps clear the box after Send.
-        if (!restarting || (SystemClock.uptimeMillis() - lastKeyAt > APP_EDIT_GAP_MS && fieldEmpty())) resetShift()
+        if (!restarting || (SystemClock.uptimeMillis() - lastDeleteAt > APP_EDIT_GAP_MS && fieldEmpty())) resetShift()
         emptyFieldWords = false
         view.barOnly = hardKeyboardAttached()
         applyPrefs()
@@ -667,9 +667,10 @@ class IosKeyboardService : InputMethodService(), KeyboardView.Listener {
         if (::view.isInitialized) {
             // The app emptied the field (a chat app's Send button clears it without restarting
             // input): like sending with the return key, that ends caps lock and a manual shift.
-            // Emptying it with the delete key doesn't (a key was just pressed).
-            if (newSelStart == 0 && newSelEnd == 0 && oldSelStart > 0 &&
-                SystemClock.uptimeMillis() - lastKeyAt > APP_EDIT_GAP_MS && fieldEmpty()
+            // Emptying it with the delete key doesn't. Only deleting counts against it: a Send
+            // tapped right after typing the last letter must still end caps lock.
+            if (newSelStart == 0 && newSelEnd == 0 && SystemClock.uptimeMillis() - lastDeleteAt > APP_EDIT_GAP_MS &&
+                fieldEmpty()
             ) resetShift()
             updateAutoShift()
             updateSuggestions()
@@ -1077,6 +1078,7 @@ class IosKeyboardService : InputMethodService(), KeyboardView.Listener {
 
     override fun onDelete(repeat: Int) {
         if (searchKey(null, delete = true)) return
+        lastDeleteAt = SystemClock.uptimeMillis()
         val ic = ic ?: return
         val smart = lastSmart
         lastSmart = null
@@ -1264,8 +1266,8 @@ class IosKeyboardService : InputMethodService(), KeyboardView.Listener {
         return count
     }
 
-    /** When a key, chip or suggestion was last pressed (to tell the keyboard's edits from the app's). */
-    private var lastKeyAt = 0L
+    /** When the delete key last removed text (an emptied field right after that wasn't the app). */
+    private var lastDeleteAt = 0L
 
     /** True if the field has no text at all (asked of the app, not the cache it may have just changed). */
     private fun fieldEmpty(): Boolean {
@@ -1274,7 +1276,6 @@ class IosKeyboardService : InputMethodService(), KeyboardView.Listener {
     }
 
     override fun onFeedback(kind: KeyKind) {
-        lastKeyAt = SystemClock.uptimeMillis()
         sounds.play(kind)
         if (prefs.haptic) haptics.tap()
     }
@@ -1344,7 +1345,7 @@ class IosKeyboardService : InputMethodService(), KeyboardView.Listener {
         const val CHIP_MS = 60_000L
         const val DAY_MS = 24 * 60 * 60 * 1000L
         const val BLUR_RADIUS_DP = 24f
-        /** A field change this long after the last key press was made by the app, not the keyboard. */
+        /** An emptied field this long after the last delete was emptied by the app, not the keyboard. */
         private const val APP_EDIT_GAP_MS = 400L
         /** Liquid Glass keyboard top-corner radius, in iOS points. */
         const val CORNER_PT = 20f

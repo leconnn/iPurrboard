@@ -14,7 +14,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
-import dev.leconnn.ioskeyboard.emoji.AppleEmojiImages
+import dev.leconnn.ioskeyboard.emoji.EmojiArt
 import dev.leconnn.ioskeyboard.ui.IosAlert
 import dev.leconnn.ioskeyboard.ui.IosList
 import dev.leconnn.ioskeyboard.ui.SettingsIcon
@@ -275,6 +275,10 @@ class SettingsActivity : Activity() {
         list.switchRow("“.” Shortcut", prefs.periodShortcut) { prefs.periodShortcut = it }
         list.footer("Double tapping the space bar will insert a period followed by a space.")
 
+        list.section("Key Preview Size")
+        for (p in Prefs.PreviewSize.entries) list.checkRow(p.label, prefs.previewSize == p) { prefs.previewSize = p }
+        list.footer("How big the letter that pops up over a key is while you type (with Character Preview on).")
+
         list.section("Long-press delay")
         for (d in Prefs.LongPress.entries) list.checkRow(d.label, prefs.longPressDelay == d) { prefs.longPressDelay = d }
         list.footer("How long to hold a key for accents, the trackpad and the emoji key menu.")
@@ -315,10 +319,10 @@ class SettingsActivity : Activity() {
         list.checkRow("Light", prefs.themeMode == Prefs.ThemeMode.LIGHT) { prefs.themeMode = Prefs.ThemeMode.LIGHT }
         list.checkRow("Dark", prefs.themeMode == Prefs.ThemeMode.DARK) { prefs.themeMode = Prefs.ThemeMode.DARK }
 
-        // Only builds that include the personal-use Apple emoji asset get this switch.
-        if (AppleEmojiImages.available(this)) {
+        // Only builds that include an emoji image pack get this switch.
+        if (EmojiArt.available(this)) {
             list.section("Emoji")
-            list.switchRow("Apple Emoji Style", prefs.appleEmoji) { prefs.appleEmoji = it }
+            list.switchRow(EmojiArt.name, prefs.emojiArt) { prefs.emojiArt = it }
         }
     }
 
@@ -378,6 +382,12 @@ class SettingsActivity : Activity() {
         list.switchRow("Clipboard History", prefs.clipboardHistory) { prefs.clipboardHistory = it }
         list.footer("Recently copied text appears in the suggestion bar, and in the clipboard (hold the emoji key, " +
             "or use the toolbar). Text marked sensitive, such as passwords, is never kept.")
+
+        list.section("Copied Items Style")
+        list.checkRow("Banner", prefs.copiedStyle == KeyStyle.IOS) { prefs.copiedStyle = KeyStyle.IOS }
+        list.checkRow("Chips", prefs.copiedStyle == KeyStyle.GBOARD) { prefs.copiedStyle = KeyStyle.GBOARD }
+        list.footer("Banner: the copied text across the bar with where it came from; tap to paste. " +
+            "Chips: the copied text plus details picked out of it, such as a phone number or a link.")
 
         list.section()
         list.switchRow("Save Recent Screenshots", prefs.clipboardScreenshots && Screenshots.granted(this)) { on ->
@@ -444,7 +454,7 @@ class SettingsActivity : Activity() {
         keyboard.oneHanded = prefs.oneHanded
         keyboard.spec = prefs.spec(password = false)
         keyboard.longPressMs = prefs.longPressDelay.ms
-        keyboard.appleEmoji = prefs.appleEmoji
+        keyboard.emojiArt = prefs.emojiArt
     }
 
     /** A confirmation, since this changes many settings at once. */

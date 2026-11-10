@@ -6,7 +6,7 @@ import java.io.InputStream
 /**
  * Emoji Kitchen: which pairs of emoji have a mash-up sticker (Gboard's hand-drawn combinations)
  * and where its picture is. The index is assets/emoji_kitchen.dat (tools/emoji/build_kitchen.py);
- * the pictures are Google's, loaded from gstatic.com only when shown (personal use).
+ * the pictures are Google's, loaded from gstatic.com only when shown, and never included.
  */
 class EmojiKitchen private constructor(
     private val dates: Array<String>,

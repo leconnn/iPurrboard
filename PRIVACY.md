@@ -1,9 +1,9 @@
 # iPurrboard Privacy Policy
 
-_Last updated: November 9, 2026_
+_Last updated: November 10, 2026_
 
 iPurrboard has no accounts, ads, analytics or tracking. What you type stays on your phone. The
-keyboard only goes online for features you turn on: GIFs and Emoji Kitchen stickers.
+keyboard only goes online for features you turn on: Emoji Kitchen stickers.
 
 ## What you type
 
@@ -33,15 +33,13 @@ keyboard only goes online for features you turn on: GIFs and Emoji Kitchen stick
 
 ## Features that go online
 
-These are off until you turn them on. When used, your phone connects directly to the service,
+This is off until you turn it on. When used, your phone connects directly to the service,
 which receives your IP address and the request.
 
-- **GIFs (GIPHY, not in the public build):** the trending list and what you search for are sent to GIPHY. GIPHY's privacy
-  policy applies: <https://giphy.com/privacy>.
 - **Emoji Kitchen stickers:** sticker pictures are loaded from Google's servers (gstatic.com), so
   Google can see which emoji combinations are shown. Google's privacy policy applies:
   <https://policies.google.com/privacy>.
-- Results and pictures are cached on your phone for a short time to load faster.
+- Sticker pictures are cached on your phone for a short time to load faster.
 
 ## What is stored, and where
 
@@ -54,7 +52,7 @@ which receives your IP address and the request.
 
 - **Microphone:** only for voice typing, asked the first time you use it.
 - **Photos:** only for Save Recent Screenshots, asked when you turn it on.
-- **Internet:** only for GIFs and Emoji Kitchen stickers.
+- **Internet:** only for Emoji Kitchen stickers.
 - **Vibration:** for key feedback.
 
 ## No sharing or selling

@@ -64,7 +64,7 @@ class ToolbarSettingsActivity : Activity() {
         }
         list.footer("Buttons in the suggestion bar when there are no suggestions; otherwise the › button at its left shows them.")
         list.section("Order")
-        // The public build has no GIFs, so no GIF button to order.
+        // Builds without GIFs have no GIF button to order.
         val order = prefs.toolbarOrder.filter { BuildConfig.GIFS || it != ToolbarItem.GIF }
         val hidden = prefs.toolbarHidden
         cells.clear()

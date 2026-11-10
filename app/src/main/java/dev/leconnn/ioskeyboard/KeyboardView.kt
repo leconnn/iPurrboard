@@ -280,9 +280,9 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     }).also { it.theme = theme }
 
     /** Use Apple's emoji art in the emoji panel when the asset is in the build. */
-    var appleEmoji: Boolean
-        get() = emoji.appleStyle
-        set(value) { emoji.appleStyle = value; invalidate() }
+    var emojiArt: Boolean
+        get() = emoji.artStyle
+        set(value) { emoji.artStyle = value; invalidate() }
 
     /** Emoji panel layout (Settings > Layout): iOS or Gboard. */
     var emojiStyle = KeyStyle.IOS
@@ -476,9 +476,19 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private val toolSlotW get() = width * TOOL_FRACTION
     private val chevronCx get() = width * CHEVRON_CENTER_FRACTION
 
-    /** Toolbar button [i]: buttons 22 % of the width apart, always centred as a group. */
+    /**
+     * The buttons shown in the bar. With more than [MAX_TOOLS] on, the first ones show and the
+     * rest go in a dropdown behind a ⌄ button in the last slot.
+     */
+    private val shownTools get() = if (toolbarItems.size > MAX_TOOLS) toolbarItems.take(MAX_TOOLS) else toolbarItems
+    private val moreTools get() = if (toolbarItems.size > MAX_TOOLS) toolbarItems.drop(MAX_TOOLS) else emptyList()
+    /** Slot index of the ⌄ button, or -1 when everything fits. */
+    private val moreSlot get() = if (moreTools.isEmpty()) -1 else shownTools.size
+    private val toolSlots get() = shownTools.size + if (moreTools.isEmpty()) 0 else 1
+
+    /** Toolbar slot [i]: slots 22 % of the width apart, always centred as a group. */
     private fun toolButtonRect(i: Int, out: RectF): RectF {
-        val cx = width / 2f + (i - (toolbarItems.size - 1) / 2f) * toolSlotW
+        val cx = width / 2f + (i - (toolSlots - 1) / 2f) * toolSlotW
         return out.apply { set(cx - toolSlotW / 2, keyboardTop, cx + toolSlotW / 2, keysTop) }
     }
 
@@ -501,7 +511,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     }
 
     private fun toolButtonAt(x: Float): Int {
-        for (i in toolbarItems.indices) {
+        for (i in 0 until toolSlots) {
             val r = toolButtonRect(i, tmpRect)
             if (x >= r.left && x < r.right) return i
         }
@@ -852,7 +862,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
      * shadow included; 0 when it fits inside the keyboard (every row below the top one).
      */
     fun headroomFor(key: Key): Float =
-        ((POPUP_RISE_PT + POPUP_SHADOW_PT) * scale - (keysTop + key.rect.top * scale)).coerceAtLeast(0f)
+        ((maxOf(POPUP_RISE_PT, 6f + 50f * previewScale) + POPUP_SHADOW_PT) * scale - (keysTop + key.rect.top * scale)).coerceAtLeast(0f)
 
     /** Room the popups showing now need above the keyboard, in pixels (0: none reach over the app). */
     fun popupHeadroomNeededPx(): Float {
@@ -1080,7 +1090,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         val drag = touches.values.firstOrNull { it.mode == Mode.TOOL && it.dragging }
         val pressedTool = touches.values.firstOrNull { it.mode == Mode.TOOL && !it.dragging }?.barIndex
         val now = SystemClock.uptimeMillis()
-        for ((i, item) in toolbarItems.withIndex()) {
+        for ((i, item) in shownTools.withIndex()) {
             val r = toolButtonRect(i, tmpRect)
             val slotX = if (drag != null && drag.barIndex == i) drag.lastX else r.centerX()
             // Other buttons glide to their new place when one is dragged past them (and the
@@ -1115,6 +1125,24 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 ToolbarItem.GIF -> Glyphs.gif(canvas, glyphRect, glyphPaint)
                 ToolbarItem.VOICE -> Glyphs.mic(canvas, glyphRect, glyphPaint)
             }
+            canvas.restore()
+        }
+        if (moreSlot >= 0) {
+            // The ⌄ button for the buttons that don't fit.
+            val r = toolButtonRect(moreSlot, tmpRect)
+            val cx = lerp(chevronCx, r.centerX(), shown)
+            val cy = r.centerY()
+            if (pressedTool == moreSlot) {
+                keyPaint.color = theme.functionKey
+                canvas.drawRoundRect(cx - 18f * scale, cy - 16f * scale, cx + 18f * scale, cy + 16f * scale,
+                    theme.keyRadiusPt * scale, theme.keyRadiusPt * scale, keyPaint)
+            }
+            val k = 0.4f + 0.6f * shown
+            canvas.save()
+            canvas.scale(k, k, cx, cy)
+            glyphPaint.color = withAlpha(theme.text, shown)
+            glyphRect.set(cx - 12f * scale, cy - 12f * scale, cx + 12f * scale, cy + 12f * scale)
+            Glyphs.chevron(canvas, glyphRect, glyphPaint, 90f)
             canvas.restore()
         }
         canvas.restoreToCount(count)
@@ -1347,7 +1375,9 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         if (total > avail && chips.size > 1) widths[0] = maxOf(iconOnly, widths[0] - (total - avail))
         val pressedChip = touches.values.firstOrNull { it.mode == Mode.CHIP }?.barIndex
         val radius = CHIP_RADIUS_PT * s
-        var x = x0
+        // Centred on the keyboard when they fit (clear of the chevron), else from the left.
+        val used = widths.sum() + gap * (chips.size - 1)
+        var x = if (used < avail) maxOf(x0, width / 2f - used / 2) else x0
         for ((i, c) in chips.withIndex()) {
             val r = chipRects[i]
             if (x + widths[i] > x0 + avail + 0.5f) { r.setEmpty(); continue }
@@ -1546,8 +1576,8 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         val radius = theme.keyRadiusPt * scale
         val function = key.isFunction && !(key.kind == KeyKind.RETURN && returnHighlighted)
         val level = pressLevel(key, pressed)
-        // Liquid Glass: a pressed letter key swells slightly and brightens, then eases back.
-        val swell = theme.glass && key.kind == KeyKind.CHAR && level > 0f
+        // A pressed letter key swells slightly and changes colour, then eases back (both looks).
+        val swell = key.kind == KeyKind.CHAR && level > 0f
         if (swell) {
             canvas.save()
             val s = 1f + GLASS_SWELL * level
@@ -1558,9 +1588,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         keyPaint.color = when {
             key.kind == KeyKind.RETURN && returnHighlighted -> mix(theme.accent, theme.functionKey, level)
             key.kind == KeyKind.SHIFT && shift != Glyphs.ShiftState.OFF -> theme.letterKey
-            // iOS letter keys keep their colour when pressed; the preview bubble shows the press.
-            // Glass keys brighten instead, since the bubble alone reads weakly on translucent keys.
-            key.kind == KeyKind.CHAR -> if (theme.glass) mix(theme.letterKey, theme.pressedLetterKey, level) else theme.letterKey
+            key.kind == KeyKind.CHAR -> mix(theme.letterKey, theme.pressedLetterKey, level)
             function -> mix(theme.functionKey, theme.pressedFunctionKey, level)
             else -> mix(theme.letterKey, theme.pressedLetterKey, level)
         }
@@ -1722,17 +1750,21 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
      * The preview bubble for [key] showing [label]. [release] > 0 draws it shrinking and fading
      * after the key was let go (0 = fully shown); otherwise glass bubbles spring in from [since].
      */
+    /** Settings > Typing > Key Preview Size: how big the letter preview over a pressed key is. */
+    var previewScale = 1f
+        set(value) { field = value; invalidate() }
+
     private fun drawBubble(canvas: Canvas, key: Key, label: String, top: Float, since: Long, release: Float): Boolean {
         val r = pxInto(key.rect, bubbleKey, top)
-        val w = r.width() * 1.55f
+        val w = r.width() * 1.55f * previewScale
         var left = r.centerX() - w / 2
         left = left.coerceIn(2f * scale, width - 2f * scale - w)
-        val head = bubbleHead.apply { set(left, r.top - 56f * scale, left + w, r.top - 6f * scale) }
+        val head = bubbleHead.apply { set(left, r.top - (6f + 50f * previewScale) * scale, left + w, r.top - 6f * scale) }
         // Let go: a quick fade so the preview doesn't blink off. The colours fade instead of an
         // offscreen layer, which would be allocated on every key release.
         val alpha = 1f - release
         drawBalloon(canvas, balloonPath(r, head), alpha)
-        drawLabel(canvas, label, head, 34f, withAlpha(theme.text, alpha))
+        drawLabel(canvas, label, head, 34f * previewScale, withAlpha(theme.text, alpha))
         return false
     }
 
@@ -1847,6 +1879,18 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         textPaint.textAlign = Paint.Align.CENTER
         canvas.restoreToCount(layer)
         return animating
+    }
+
+    /** The ⌄ button's dropdown: the toolbar buttons that don't fit in the bar, by name. */
+    private fun openMoreTools() {
+        val items = moreTools.takeIf { it.isNotEmpty() } ?: return
+        val r = toolButtonRect(moreSlot, tmpRect)
+        // Anchored under the ⌄ button (pixels relative to the keys' top), opening down over the keys.
+        val anchor = RectF(r.centerX() - MENU_WIDTH_PT * scale / 2, r.top - keysTop, r.centerX() + MENU_WIDTH_PT * scale / 2, r.bottom - keysTop)
+        showMenu(items.map { it.label }, anchor) { i ->
+            toolbarExpanded = false
+            listener.onToolbar(items[i])
+        }
     }
 
     private fun openMenu(key: Key) {
@@ -2192,6 +2236,8 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 val t = Touch(id, null, x, y).apply { mode = Mode.TOOL; barIndex = i }
                 touches[id] = t
                 listener.onFeedback(KeyKind.EMOJI)
+                // The ⌄ button only opens its dropdown; it isn't rearranged.
+                if (i == moreSlot) return
                 if (rearranging) t.dragging = true else handler.postDelayed(t.longPress, longPressMs)
                 return
             }
@@ -2262,10 +2308,10 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             }
             Mode.TOOL -> {
                 t.lastX = x
-                if (t.dragging && t.barIndex in toolbarItems.indices) {
+                if (t.dragging && t.barIndex in shownTools.indices) {
                     // Drop position follows the finger; the other buttons make room.
                     val first = toolButtonRect(0, tmpRect).left
-                    val target = ((x - first) / toolSlotW).toInt().coerceIn(0, toolbarItems.size - 1)
+                    val target = ((x - first) / toolSlotW).toInt().coerceIn(0, shownTools.size - 1)
                     if (target != t.barIndex) {
                         toolbarItems = toolbarItems.toMutableList().apply { add(target, removeAt(t.barIndex)) }
                         t.barIndex = target
@@ -2355,6 +2401,8 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 // Saved after this touch is done, so settings don't change mid-dispatch.
                 val order = toolbarItems
                 post { listener.onToolbarOrder(order) }
+            } else if (commit && !rearranging && toolButtonAt(t.lastX) == t.barIndex && t.barIndex == moreSlot) {
+                openMoreTools()
             } else if (commit && !rearranging && toolButtonAt(t.lastX) == t.barIndex) {
                 toolbarItems.getOrNull(t.barIndex)?.let { item ->
                     toolbarExpanded = false
@@ -2490,6 +2538,8 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         /** Bar height for a panel when the keys have no bar (as BAR_HEIGHT_PT in the service). */
         private const val PANEL_BAR_PT = 44f
         private const val TOOL_FRACTION = 0.22f
+        /** Toolbar slots that fit beside the chevron; with more buttons, the last slot is a ⌄ dropdown. */
+        private const val MAX_TOOLS = 3
         private const val TOOLBAR_MS = 220L
         private const val MENU_ROW_PT = 40f
         /** The keyboard's name stays on the space bar this long after switching, then fades. */
