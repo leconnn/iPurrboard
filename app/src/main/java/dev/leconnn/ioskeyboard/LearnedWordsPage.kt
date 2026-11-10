@@ -1,20 +1,13 @@
 package dev.leconnn.ioskeyboard
 
 import android.app.Activity
-import android.content.Context
-import android.os.Bundle
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
-import android.view.WindowInsets
-import android.widget.EditText
-import android.widget.LinearLayout
-import android.widget.ScrollView
 import dev.leconnn.ioskeyboard.text.Dictionary
 import dev.leconnn.ioskeyboard.text.UserWords
 import dev.leconnn.ioskeyboard.ui.IosAlert
 import dev.leconnn.ioskeyboard.ui.IosList
-import dev.leconnn.ioskeyboard.ui.ThemeMode
 import java.util.concurrent.Executors
 
 /**
@@ -22,52 +15,31 @@ import java.util.concurrent.Executors
  * learned that aren't in its dictionary (your names, slang, jargon) and the corrections you undid,
  * each removable; plus Add Word and Reset Learned Data.
  */
-class LearnedWordsActivity : Activity() {
+class LearnedWordsPage(private val activity: Activity, private val rerender: () -> Unit) {
 
-    private lateinit var users: UserWords
+    private val users = UserWords.get(activity)
     private var dictionaryWords: Set<String>? = null
     private var query = ""
-    private lateinit var scroll: ScrollView
+    /** Typing in the search field rebuilds the page; the new field takes the focus back. */
+    private var refocus = false
 
-    override fun attachBaseContext(newBase: Context) = super.attachBaseContext(ThemeMode.wrap(newBase))
-
-    override fun onResume() {
-        super.onResume()
-        // Light / Dark may have changed on the Appearance page while this screen was underneath.
-        ThemeMode.refreshIfChanged(this)
-    }
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        users = UserWords.get(this)
-        scroll = ScrollView(this)
-        scroll.setOnApplyWindowInsetsListener { v, insets ->
-            val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.ime())
-            v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
-            insets
-        }
-        setContentView(scroll)
-        ThemeMode.styleBars(this)
-        render()
+    init {
         // The dictionaries (every enabled keyboard language) decide which learned words are
         // "new"; load them off the main thread.
-        val languages = Prefs.get(this).keyboards
+        val languages = Prefs.get(activity).keyboards
         Executors.newSingleThreadExecutor().execute {
             val words = HashSet<String>()
             for (l in languages) {
-                val d = assets.open(l.dictAsset).bufferedReader(Charsets.UTF_8).useLines { Dictionary.parse(it) }
+                val d = activity.assets.open(l.dictAsset).bufferedReader(Charsets.UTF_8).useLines { Dictionary.parse(it) }
                 (0 until d.size).mapTo(words) { d.keys[it] }
             }
-            runOnUiThread { dictionaryWords = words; render() }
+            activity.runOnUiThread { dictionaryWords = words; if (!activity.isFinishing) rerender() }
         }
     }
 
-    private fun render() {
-        val list = IosList(this)
-        scroll.setBackgroundColor(list.background)
-        list.backButton("Settings") { finish() }
-        list.largeTitle("Learned Words")
+    private fun render() = rerender()
 
+    fun build(list: IosList) {
         val search = list.searchField("Search", query).apply {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
         }
@@ -97,32 +69,21 @@ class LearnedWordsActivity : Activity() {
         list.section()
         list.actionRow("Reset Learned Data", list.red) { confirmReset() }
 
-        scroll.removeAllViews()
-        scroll.addView(list.root)
+        // Keep typing in the rebuilt search field.
+        if (refocus) { refocus = false; search.post { search.requestFocus() } }
         search.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
             override fun afterTextChanged(s: Editable?) {
                 query = s?.toString().orEmpty()
+                refocus = true
                 render()
-                // Keep typing in the rebuilt search field.
-                (scroll.getChildAt(0) as? LinearLayout)?.let { root -> findSearch(root)?.requestFocus() }
             }
         })
     }
 
-    private fun findSearch(group: android.view.ViewGroup): EditText? {
-        for (i in 0 until group.childCount) {
-            when (val v = group.getChildAt(i)) {
-                is EditText -> return v
-                is android.view.ViewGroup -> findSearch(v)?.let { return it }
-            }
-        }
-        return null
-    }
-
     private fun confirmDelete(word: String) {
-        IosAlert(this)
+        IosAlert(activity)
             .title("Remove “$word”?")
             .message("The keyboard will stop suggesting it, and may correct it again.")
             .action("Cancel", IosAlert.Style.CANCEL)
@@ -131,7 +92,7 @@ class LearnedWordsActivity : Activity() {
     }
 
     private fun confirmUnreject(word: String) {
-        IosAlert(this)
+        IosAlert(activity)
             .title("Correct “$word” Again?")
             .message("Auto-Correction will fix this word again when it looks like a typo.")
             .action("Cancel", IosAlert.Style.CANCEL)
@@ -140,7 +101,7 @@ class LearnedWordsActivity : Activity() {
     }
 
     private fun addWord() {
-        val alert = IosAlert(this).title("Add Word").message("It will be suggested and never autocorrected.")
+        val alert = IosAlert(activity).title("Add Word").message("It will be suggested and never autocorrected.")
         val field = alert.field("Word", type = InputType.TYPE_CLASS_TEXT)
         alert.action("Cancel", IosAlert.Style.CANCEL)
             .action("Add", IosAlert.Style.PREFERRED) { users.add(field.text.toString()); render() }
@@ -148,7 +109,7 @@ class LearnedWordsActivity : Activity() {
     }
 
     private fun confirmReset() {
-        IosAlert(this)
+        IosAlert(activity)
             .title("Reset Learned Data?")
             .message("Learned words, word pairs and undone corrections are deleted. Text replacements and settings are kept.")
             .action("Cancel", IosAlert.Style.CANCEL)

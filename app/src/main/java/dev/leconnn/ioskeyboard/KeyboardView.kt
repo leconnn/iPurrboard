@@ -9,6 +9,7 @@ import android.graphics.LinearGradient
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PointF
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
@@ -409,6 +410,9 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private var menuGone: List<String>? = null
     private var menuGoneSelected = -1
     private var menuGoneAt = 0L
+    /** Where the open (and the just-closed) menu scales from, in [menuRect]'s coordinates; null = default. */
+    private var menuPivot: PointF? = null
+    private var menuGonePivot: PointF? = null
     /** Row with a checkmark (the current keyboard), or -1; for the open and the closing menu. */
     private var menuChecked = -1
     private var menuGoneChecked = -1
@@ -477,8 +481,9 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private val chevronCx get() = width * CHEVRON_CENTER_FRACTION
 
     /**
-     * The buttons shown in the bar. With more than [MAX_TOOLS] on, the first ones show and the
-     * rest go in a dropdown behind a ⌄ button in the last slot.
+     * The buttons shown in the bar. With more than [MAX_TOOLS] on, the first ones show (centred,
+     * as always) and the rest go in a dropdown behind a small ⌄ at the right edge, mirroring the
+     * chevron at the left.
      */
     private val shownTools get() = if (toolbarItems.size > MAX_TOOLS) toolbarItems.take(MAX_TOOLS) else toolbarItems
     private val moreTools get() = if (toolbarItems.size > MAX_TOOLS) toolbarItems.drop(MAX_TOOLS) else emptyList()
@@ -486,10 +491,39 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private val moreSlot get() = if (moreTools.isEmpty()) -1 else shownTools.size
     private val toolSlots get() = shownTools.size + if (moreTools.isEmpty()) 0 else 1
 
-    /** Toolbar slot [i]: slots 22 % of the width apart, always centred as a group. */
+    /**
+     * Toolbar slot [i]: the buttons sit 22 % of the width apart, centred as a group; the ⌄
+     * ([moreSlot]) takes the right edge, the same width as the chevron's zone at the left.
+     */
     private fun toolButtonRect(i: Int, out: RectF): RectF {
-        val cx = width / 2f + (i - (toolSlots - 1) / 2f) * toolSlotW
+        if (i == moreSlot) return out.apply { set(width * (1f - CHEVRON_FRACTION), keyboardTop, width.toFloat(), keysTop) }
+        val cx = width / 2f + (i - (shownTools.size - 1) / 2f) * toolSlotW
         return out.apply { set(cx - toolSlotW / 2, keyboardTop, cx + toolSlotW / 2, keysTop) }
+    }
+
+    /** The ⌄'s turn: 0 points down, 1 points up (its dropdown is open). Reverses from where it is. */
+    private var moreFlipFrom = 0f
+    private var moreFlipTarget = 0f
+    private var moreFlipSince = 0L
+    /** The open menu is the ⌄'s dropdown (so the ⌄ shows it open). */
+    private var menuFromMore = false
+
+    private fun moreFlipAt(now: Long): Float {
+        if (!animationsOn) return moreFlipTarget
+        val p = ((now - moreFlipSince) / MORE_FLIP_MS.toFloat()).coerceIn(0f, 1f)
+        return lerp(moreFlipFrom, moreFlipTarget, STRONG_EASE_OUT.getInterpolation(p))
+    }
+
+    private fun moreFlip(): Float {
+        val now = SystemClock.uptimeMillis()
+        val target = if (menu != null && menuFromMore) 1f else 0f
+        if (target != moreFlipTarget) {
+            moreFlipFrom = moreFlipAt(now)
+            moreFlipTarget = target
+            moreFlipSince = now
+        }
+        if (animationsOn && now - moreFlipSince < MORE_FLIP_MS) frameAnimating = true
+        return moreFlipAt(now)
     }
 
     /** How far the buttons are out (1) or folded into the chevron (0), animated between the two. */
@@ -844,7 +878,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             // Liquid Glass: the same light rim as the keys.
             glyphPaint.style = Paint.Style.STROKE
             glyphPaint.strokeWidth = maxOf(1f, 0.75f * s)
-            glyphPaint.color = withAlpha(theme.rim, a * 0.8f)
+            glyphPaint.color = withAlpha(glassOutline, a * 0.8f)
             canvas.drawRoundRect(noticeRect, h / 2, h / 2, glyphPaint)
             glyphPaint.style = Paint.Style.FILL
         }
@@ -1128,21 +1162,19 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             canvas.restore()
         }
         if (moreSlot >= 0) {
-            // The ⌄ button for the buttons that don't fit.
+            // The ⌄ for the buttons that don't fit: the left chevron's twin at the right edge. It
+            // fades in place as the buttons unfold (it doesn't slide across the bar), dims while
+            // pressed like an iOS bar button, and turns to ⌃ while its dropdown is open.
             val r = toolButtonRect(moreSlot, tmpRect)
-            val cx = lerp(chevronCx, r.centerX(), shown)
+            val cx = width - chevronCx
             val cy = r.centerY()
-            if (pressedTool == moreSlot) {
-                keyPaint.color = theme.functionKey
-                canvas.drawRoundRect(cx - 18f * scale, cy - 16f * scale, cx + 18f * scale, cy + 16f * scale,
-                    theme.keyRadiusPt * scale, theme.keyRadiusPt * scale, keyPaint)
-            }
-            val k = 0.4f + 0.6f * shown
+            val k = 0.6f + 0.4f * shown
+            val pressAlpha = if (pressedTool == moreSlot) 0.35f else 1f
             canvas.save()
             canvas.scale(k, k, cx, cy)
-            glyphPaint.color = withAlpha(theme.text, shown)
-            glyphRect.set(cx - 12f * scale, cy - 12f * scale, cx + 12f * scale, cy + 12f * scale)
-            Glyphs.chevron(canvas, glyphRect, glyphPaint, 90f)
+            glyphPaint.color = withAlpha(theme.text, shown * pressAlpha)
+            glyphRect.set(cx - 10f * scale, cy - 10f * scale, cx + 10f * scale, cy + 10f * scale)
+            Glyphs.chevron(canvas, glyphRect, glyphPaint, 90f + 180f * moreFlip())
             canvas.restore()
         }
         canvas.restoreToCount(count)
@@ -1499,7 +1531,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
      */
     private fun ellipsizeMiddle(s: String, maxPx: Float, sizePt: Float): String {
         textPaint.textSize = sizePt * scale
-        if (s.length > LABEL_MAX_CHARS || textPaint.measureText(s) > maxPx) {
+        if (s.length > LABEL_MAX_CHARS || textPaint.measureText(s) > maxPx + 0.5f) {
             val room = maxPx - textPaint.measureText("…")
             fun cut(keep: Int): Pair<Int, Int> {
                 var head = (keep + 1) / 2
@@ -1529,7 +1561,9 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         textPaint.textSize = sizePt * scale
         // Nothing past this many characters can fit in a bar-sized label anyway.
         val t = if (s.length > LABEL_MAX_CHARS) s.substring(0, LABEL_MAX_CHARS) else s
-        if (t.length == s.length && textPaint.measureText(t) <= maxPx) return t
+        // Half a pixel of slack: room worked out as a sum can come back a hair short (53.99997 for
+        // a 54-px word), which shortened "test" to "te…" in a chip made to fit it.
+        if (t.length == s.length && textPaint.measureText(t) <= maxPx + 0.5f) return t
         val room = maxPx - textPaint.measureText("…")
         var lo = 1
         var hi = t.length
@@ -1678,7 +1712,20 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private var rimShaderColor = 0
     private val rimMatrix = Matrix()
 
+    /** Popup outline in Glass: Show Borders' colour when on, else the (unused) rim. */
+    private val glassOutline get() = if (theme.border != 0) theme.border else theme.rim
+
     private fun drawRim(canvas: Canvas, r: RectF, radius: Float) {
+        if (theme.border != 0) {
+            // Show Borders (iOS 27 Settings > Appearance > Liquid Glass): an even hairline outline.
+            rimPaint.shader = null
+            rimPaint.color = theme.border
+            rimPaint.strokeWidth = maxOf(1f, 0.5f * scale)
+            val inset = rimPaint.strokeWidth / 2
+            canvas.drawRoundRect(r.left + inset, r.top + inset, r.right - inset, r.bottom - inset, radius, radius, rimPaint)
+            return
+        }
+        if (theme.rim == 0) return
         if (rimShader == null || rimShaderColor != theme.rim) {
             rimShader = LinearGradient(0f, 0f, 0f, 1f, intArrayOf(theme.rim, theme.rim and 0x00FFFFFF),
                 floatArrayOf(0f, 0.45f), Shader.TileMode.CLAMP)
@@ -1687,6 +1734,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         rimMatrix.setScale(1f, r.height())
         rimMatrix.postTranslate(0f, r.top)
         rimShader!!.setLocalMatrix(rimMatrix)
+        rimPaint.color = Color.BLACK // the shader supplies the colour; keep full paint alpha
         rimPaint.shader = rimShader
         rimPaint.strokeWidth = maxOf(1f, 0.6f * scale)
         val inset = rimPaint.strokeWidth / 2
@@ -1731,10 +1779,10 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
      * Grows a menu in from its anchor ([pivotX], [pivotY]): 95 % to 100 % on a strong ease-out.
      * Returns true while still animating.
      */
-    private fun springIn(canvas: Canvas, since: Long, pivotX: Float, pivotY: Float): Boolean {
+    private fun springIn(canvas: Canvas, since: Long, pivotX: Float, pivotY: Float, from: Float = 0.95f): Boolean {
         val p = if (!animationsOn) 1f else ((SystemClock.uptimeMillis() - since) / POPUP_SPRING_MS.toFloat()).coerceIn(0f, 1f)
-        // From 95 % on a strong ease-out, no overshoot: a menu that just appears shouldn't bounce.
-        val s = 0.95f + 0.05f * STRONG_EASE_OUT.getInterpolation(p)
+        // From [from] on a strong ease-out, no overshoot: a menu that just appears shouldn't bounce.
+        val s = from + (1f - from) * STRONG_EASE_OUT.getInterpolation(p)
         canvas.scale(s, s, pivotX, pivotY)
         return p < 1f
     }
@@ -1754,12 +1802,16 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     var previewScale = 1f
         set(value) { field = value; invalidate() }
 
+    /** The preview bubble's head over the key at [r] (pixels), into [out]. */
+    private fun bubbleHeadFor(r: RectF, out: RectF): RectF {
+        val w = r.width() * 1.55f * previewScale
+        val left = (r.centerX() - w / 2).coerceIn(2f * scale, width - 2f * scale - w)
+        return out.apply { set(left, r.top - (6f + 50f * previewScale) * scale, left + w, r.top - 6f * scale) }
+    }
+
     private fun drawBubble(canvas: Canvas, key: Key, label: String, top: Float, since: Long, release: Float): Boolean {
         val r = pxInto(key.rect, bubbleKey, top)
-        val w = r.width() * 1.55f * previewScale
-        var left = r.centerX() - w / 2
-        left = left.coerceIn(2f * scale, width - 2f * scale - w)
-        val head = bubbleHead.apply { set(left, r.top - (6f + 50f * previewScale) * scale, left + w, r.top - 6f * scale) }
+        val head = bubbleHeadFor(r, bubbleHead)
         // Let go: a quick fade so the preview doesn't blink off. The colours fade instead of an
         // offscreen layer, which would be allocated on every key release.
         val alpha = 1f - release
@@ -1770,32 +1822,67 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
 
     private val variantKey = RectF()
     private val variantHead = RectF()
+    private val variantFrom = RectF()
+    private val variantFinal = RectF()
     private val variantCell = RectF()
 
+    /**
+     * The accent panel. It grows out of what was there: the preview bubble's head stretches
+     * sideways into the strip (over the same neck) while the previewed letter shrinks away and
+     * the accents spread out with it, the one under the finger first. Without
+     * a preview bubble the strip widens out of the key. Touches work from the first frame.
+     */
     private fun drawVariants(canvas: Canvas, t: Touch, top: Float): Boolean {
         val v = t.variants ?: return false
-        val r = pxInto(t.key!!.rect, variantKey, top)
+        val key = t.key!!
+        val r = pxInto(key.rect, variantKey, top)
         // Stored relative to the keys' top so it can be drawn in this view or a popup host.
-        val head = variantHead.apply { set(t.variantRect); offset(0f, top) }
-        canvas.save()
-        // Appears at once, as on iOS.
-        val animating = false
+        val final = variantFinal.apply { set(t.variantRect); offset(0f, top) }
+        val p = if (!animationsOn) 1f else ((SystemClock.uptimeMillis() - t.variantsAt) / VARIANT_MORPH_MS.toFloat()).coerceIn(0f, 1f)
+        val e = STRONG_EASE_OUT.getInterpolation(p)
+        val fromPreview = key.kind == KeyKind.CHAR && characterPreview
+        val from = if (fromPreview) bubbleHeadFor(r, variantFrom)
+            else variantFrom.apply { set(r.left, final.top, r.right, final.bottom) }
+        val head = variantHead.apply {
+            set(lerp(from.left, final.left, e), lerp(from.top, final.top, e), lerp(from.right, final.right, e), lerp(from.bottom, final.bottom, e))
+        }
         drawBalloon(canvas, balloonPath(r, head))
-        val cw = head.width() / v.items.size
+        // The previewed letter gives way in the first half.
+        if (fromPreview && e < 1f) {
+            val out = (1f - e / 0.5f).coerceIn(0f, 1f)
+            if (out > 0f) {
+                canvas.save()
+                val k = 0.7f + 0.3f * out
+                canvas.scale(k, k, head.centerX(), head.centerY())
+                drawLabel(canvas, display(key), head, 34f * previewScale, withAlpha(theme.text, out))
+                canvas.restore()
+            }
+        }
+        val cw = final.width() / v.items.size
         val items = ordered(v)
         for ((i, s) in items.withIndex()) {
-            val cell = variantCell.apply { set(head.left + i * cw, head.top, head.left + (i + 1) * cw, head.bottom) }
-            var color = theme.text
+            // Each accent rides its own slot of the growing strip (so they spread with it and never
+            // overlap) and fades in a beat after its neighbour nearer the finger.
+            val lag = (kotlin.math.abs(i - t.variantBase) * VARIANT_STAGGER).coerceAtMost(0.3f)
+            val q = if (p >= 1f) 1f else STRONG_EASE_OUT.getInterpolation(((p - lag) / (1f - lag)).coerceIn(0f, 1f))
+            if (q <= 0f) continue
+            val slot = head.width() / items.size
+            val cx = head.left + (i + 0.5f) * slot
+            val cell = variantCell.apply { set(cx - cw / 2, head.top, cx + cw / 2, head.bottom) }
+            var color = withAlpha(theme.text, q)
             if (i == t.variantSelected) {
-                keyPaint.color = theme.accent
+                keyPaint.color = withAlpha(theme.accent, q)
                 canvas.drawRoundRect(cell.left + 2f * scale, cell.top + 4f * scale, cell.right - 2f * scale, cell.bottom - 4f * scale,
                     5f * scale, 5f * scale, keyPaint)
-                color = theme.accentText
+                color = withAlpha(theme.accentText, q)
             }
+            canvas.save()
+            val k = 0.6f + 0.4f * q
+            canvas.scale(k, k, cell.centerX(), cell.centerY())
             drawLabel(canvas, s, cell, 24f, color)
+            canvas.restore()
         }
-        canvas.restore()
-        return animating
+        return p < 1f
     }
 
     /**
@@ -1808,7 +1895,12 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         val selected = if (open != null) menuSelected else menuGoneSelected
         val m = tmpRect.apply { set(menuRect); offset(0f, top) }
         val radius = 12f * scale
-        val pivotX = m.left + 20f * scale
+        // Menus scale from near their button: a dropdown from the button's point, others from the
+        // bottom-left (they open above the key that opened them).
+        val pivot = if (open != null) menuPivot else menuGonePivot
+        val pivotX = pivot?.x ?: (m.left + 20f * scale)
+        val pivotY = if (pivot != null) pivot.y + top else m.bottom
+        val from = if (pivot != null) DROPDOWN_FROM else 0.95f
         // Fades use a layer only as big as the menu (plus room for its spring overshoot and
         // shadow): a full-window layer every frame made the menu stutter on phones.
         val lb = menuLayer.apply {
@@ -1821,14 +1913,15 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         if (open != null) {
             alpha = if (!animationsOn) 1f else ((SystemClock.uptimeMillis() - menuAt) / MENU_FADE_MS.toFloat()).coerceIn(0f, 1f)
             layer = if (alpha < 1f) canvas.saveLayerAlpha(lb, (alpha * 255).toInt()) else canvas.save()
-            animating = springIn(canvas, menuAt, pivotX, m.bottom) || alpha < 1f
+            animating = springIn(canvas, menuAt, pivotX, pivotY, from) || alpha < 1f
         } else {
             val p = if (!animationsOn) 1f else ((SystemClock.uptimeMillis() - menuGoneAt) / MENU_OUT_MS.toFloat()).coerceIn(0f, 1f)
             if (p >= 1f) { menuGone = null; return false }
             alpha = 1f - easeOut(p)
             layer = canvas.saveLayerAlpha(lb, (alpha * 255).toInt())
-            val s = 1f - 0.08f * easeOut(p)
-            canvas.scale(s, s, pivotX, m.bottom)
+            // Leaves the way it came: back towards its pivot.
+            val s = 1f - (1f - from) * easeOut(p)
+            canvas.scale(s, s, pivotX, pivotY)
             animating = true
         }
         keyPaint.color = theme.keyShadow
@@ -1839,7 +1932,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             // Liquid Glass: the light rim the keys and notices have.
             glyphPaint.style = Paint.Style.STROKE
             glyphPaint.strokeWidth = maxOf(1f, 0.75f * scale)
-            glyphPaint.color = withAlpha(theme.rim, 0.8f)
+            glyphPaint.color = withAlpha(glassOutline, 0.8f)
             canvas.drawRoundRect(m, radius, radius, glyphPaint)
             glyphPaint.style = Paint.Style.FILL
         }
@@ -1885,12 +1978,14 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private fun openMoreTools() {
         val items = moreTools.takeIf { it.isNotEmpty() } ?: return
         val r = toolButtonRect(moreSlot, tmpRect)
-        // Anchored under the ⌄ button (pixels relative to the keys' top), opening down over the keys.
-        val anchor = RectF(r.centerX() - MENU_WIDTH_PT * scale / 2, r.top - keysTop, r.centerX() + MENU_WIDTH_PT * scale / 2, r.bottom - keysTop)
-        showMenu(items.map { it.label }, anchor) { i ->
+        // Under the ⌄ (pixels relative to the keys' top), right-aligned, opening down over the keys
+        // and growing out of the ⌄ itself.
+        val anchor = RectF(r.left, r.top - keysTop, r.right, r.bottom - keysTop)
+        showMenu(items.map { it.label }, anchor, growFromAnchor = true) { i ->
             toolbarExpanded = false
             listener.onToolbar(items[i])
         }
+        menuFromMore = true
     }
 
     private fun openMenu(key: Key) {
@@ -1904,7 +1999,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
      * Opens an iOS-style menu of [labels] above [anchor] (pixels, relative to the keys' top), or
      * below it when there is no room above; [onPick] gets the chosen index.
      */
-    fun showMenu(labels: List<String>, anchor: RectF, checked: Int = -1, onPick: (Int) -> Unit) {
+    fun showMenu(labels: List<String>, anchor: RectF, checked: Int = -1, growFromAnchor: Boolean = false, onPick: (Int) -> Unit) {
         val w = MENU_WIDTH_PT * scale
         val n = labels.size
         val full = MENU_ROW_PT * scale * n
@@ -1933,6 +2028,11 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             }
         }
         menuRect.set(left, top, left + w, top + h)
+        // A dropdown grows from the point of the menu nearest its button; other menus keep the
+        // default pivot (see [drawMenu]).
+        menuPivot = if (!growFromAnchor) null
+            else PointF(anchor.centerX().coerceIn(left, left + w), if (top >= anchor.bottom) top else top + h)
+        menuFromMore = false
         menu = labels
         menuChecked = checked
         menuGone = null
@@ -1951,6 +2051,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         menuGoneSelected = menuSelected
         menuGoneChecked = menuChecked
         menuGoneAt = SystemClock.uptimeMillis()
+        menuGonePivot = menuPivot
         menu = null
         menuAction = null
         invalidate()
@@ -2485,6 +2586,10 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         private const val POPUP_SHADOW_PT = 4f
         private const val ONE_HANDED_SCALE = 0.86f
         private const val POPUP_SPRING_MS = 180L
+        /** The preview bubble turning into the accent panel. */
+        private const val VARIANT_MORPH_MS = 240L
+        /** Extra delay per cell away from the starting accent, as a fraction of the morph. */
+        private const val VARIANT_STAGGER = 0.05f
         /** cubic-bezier(0.23, 1, 0.32, 1): a strong ease-out for things appearing. */
         private val STRONG_EASE_OUT = android.view.animation.PathInterpolator(0.23f, 1f, 0.32f, 1f)
         /** Glides that follow a target (toolbar buttons): time constant of the exponential ease. */
@@ -2510,6 +2615,10 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         /** iOS context menus fade in with their spring and fade out quicker than they came. */
         private const val MENU_FADE_MS = 100L
         private const val MENU_OUT_MS = 150L
+        /** The ⌄ turning to ⌃ (and back) as its dropdown opens and closes. */
+        private const val MORE_FLIP_MS = 220L
+        /** A dropdown starts this big, growing out of its button. */
+        private const val DROPDOWN_FROM = 0.85f
         /** Stroke of the toolbar chevron as Glyphs.chevron draws it in a 20 pt box (1.6 / 24 * 20). */
         private const val CHEVRON_STROKE_PT = 1.33f
         private const val CARET_BLINK_MS = 530L

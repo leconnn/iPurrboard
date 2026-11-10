@@ -8,8 +8,9 @@ import android.graphics.Path
 import android.graphics.RectF
 
 /**
- * Approximate iOS keyboard colours (sampled by eye, not extracted). Classic is the flat
- * pre-iOS 26 look; Glass is translucent keys over a tinted, blurred panel ([panelTint]).
+ * iOS keyboard colours. Classic is the flat pre-iOS 26 look (sampled by eye); Glass is iOS 27's
+ * Liquid Glass, translucent keys over a tinted, blurred panel ([panelTint]), with values taken
+ * from iOS 27.2's UIKit (see [glassLight]).
  */
 class KeyboardTheme(
     val background: Int,
@@ -28,8 +29,13 @@ class KeyboardTheme(
     val rim: Int = 0,
     /** Fill of preview bubbles and accent panels; they sit outside the blurred window. */
     val popup: Int = letterKey,
+    /** Glass: outline around keys and popups (Settings > Appearance > Show Borders), or 0. */
+    val border: Int = 0,
+    /** Glass: radius of the window blur behind the panel, in dp. */
+    val blurRadiusDp: Float = 0f,
 ) {
-    val keyRadiusPt get() = if (glass) 8.5f else 5f
+    // iOS 27 UIKBDynamicRenderFactory.keyCornerRadius: 10 pt on iPhone; Classic keeps iOS 18's 5 pt.
+    val keyRadiusPt get() = if (glass) 10f else 5f
 
     companion object {
         val light = KeyboardTheme(
@@ -55,25 +61,70 @@ class KeyboardTheme(
             accentText = 0xFFFFFFFF.toInt(),
         )
 
-        // iOS 27 Liquid Glass: a see-through, blurred panel (the app's colours show through),
-        // every key the same soft colour (function keys included), no key shadows and no rim.
-        private fun glassLight(blur: Boolean) = KeyboardTheme(
-            background = 0, letterKey = 0xF2FFFFFF.toInt(), functionKey = 0xF2FFFFFF.toInt(),
-            pressedLetterKey = 0xFFD9DADE.toInt(), pressedFunctionKey = 0xFFD9DADE.toInt(),
-            keyShadow = 0, text = 0xFF000000.toInt(),
-            accent = 0xFF007AFF.toInt(), accentText = 0xFFFFFFFF.toInt(), glass = true,
-            panelTint = if (blur) 0xA6E9EAED.toInt() else 0xD9E9EAED.toInt(),
-            rim = 0, popup = 0xFFFFFFFF.toInt(),
-        )
+        /*
+         * iOS 27 Liquid Glass. Values come from iOS 27.2's UIKit and CoreMaterial:
+         *  - UIKBRenderConfig: light keyboard blur radius 30 / saturation 0.9 / keycap opacity 0.96;
+         *    dark keyboard blur 20 / saturation 0.5 / keycaps 1.0; the clear config's keycaps 0.85.
+         *  - UIKBDynamicRenderFactory: every key (function keys too) gets the same fill; a pressed
+         *    light key darkens by 15 % black; keys are rounded 10 pt.
+         *  - CoreMaterial platformContentGlass, the clear system glass: blur 45 and a colour matrix
+         *    that maps each channel x to 0.629x + 0.235 (37 % of the way to a 63 % grey), so the
+         *    clearest glass still keeps about a third of a tint; More Clear stops at 30 % here.
+         *  - Settings > Appearance > Liquid Glass > Tint Amount (UIViewGlassTintAmount): a slider
+         *    from More Clear to More Tinted; "tinted increases opacity, adding contrast".
+         * [tint] is that slider (0 = More Clear, 0.5 = Default, 1 = More Tinted). Android can't
+         * saturate or lens the blur, so the panel is a tint over the window blur.
+         */
 
-        private fun glassDark(blur: Boolean) = KeyboardTheme(
-            background = 0, letterKey = 0x2BFFFFFF, functionKey = 0x2BFFFFFF,
-            pressedLetterKey = 0x59FFFFFF, pressedFunctionKey = 0x59FFFFFF,
-            keyShadow = 0, text = 0xFFFFFFFF.toInt(),
-            accent = 0xFF0A84FF.toInt(), accentText = 0xFFFFFFFF.toInt(), glass = true,
-            panelTint = if (blur) 0x99242527.toInt() else 0xCC222325.toInt(),
-            rim = 0, popup = 0xFF464749.toInt(),
-        )
+        private fun glassLight(blur: Boolean, tint: Float, borders: Boolean): KeyboardTheme {
+            val panel = tinted(tint, 0x4DE9EAED, 0xA6E9EAED.toInt(), 0xEDE9EAED.toInt())
+            val keyAlpha = tinted(tint, 0.85f, 0.96f, 1f)
+            val key = withAlpha(0xFFFFFF, keyAlpha)
+            val pressed = mixColor(0xFFFFFFFF.toInt(), 0xFF000000.toInt(), 0.15f) // UIKBColorBlack_Alpha15 over the key
+            return KeyboardTheme(
+                background = 0, letterKey = key, functionKey = key,
+                pressedLetterKey = pressed, pressedFunctionKey = pressed,
+                keyShadow = 0, text = 0xFF000000.toInt(),
+                accent = 0xFF007AFF.toInt(), accentText = 0xFFFFFFFF.toInt(), glass = true,
+                panelTint = if (blur) panel else opaquer(panel), rim = 0, popup = 0xFFFFFFFF.toInt(),
+                border = if (borders) 0x26000000 else 0, blurRadiusDp = 30f,
+            )
+        }
+
+        private fun glassDark(blur: Boolean, tint: Float, borders: Boolean): KeyboardTheme {
+            val panel = tinted(tint, 0x4D242527, 0x99242527.toInt(), 0xED1C1C1E.toInt())
+            val key = withAlpha(0xFFFFFF, tinted(tint, 0.14f, 0.17f, 0.22f))
+            val pressed = 0x59FFFFFF
+            return KeyboardTheme(
+                background = 0, letterKey = key, functionKey = key,
+                pressedLetterKey = pressed, pressedFunctionKey = pressed,
+                keyShadow = 0, text = 0xFFFFFFFF.toInt(),
+                accent = 0xFF0A84FF.toInt(), accentText = 0xFFFFFFFF.toInt(), glass = true,
+                panelTint = if (blur) panel else opaquer(panel), rim = 0, popup = 0xFF464749.toInt(),
+                border = if (borders) 0x40FFFFFF else 0, blurRadiusDp = 20f,
+            )
+        }
+
+        /** The slider's three stops: More Clear (0), Default (0.5), More Tinted (1). */
+        private fun tinted(t: Float, clear: Float, default: Float, tinted: Float) =
+            if (t <= 0.5f) clear + (default - clear) * (t / 0.5f) else default + (tinted - default) * ((t - 0.5f) / 0.5f)
+
+        private fun tinted(t: Float, clear: Int, default: Int, tinted: Int) =
+            if (t <= 0.5f) mixColor(clear, default, t / 0.5f) else mixColor(default, tinted, (t - 0.5f) / 0.5f)
+
+        /** Without the window blur the app shows through sharply, so the panel is more opaque. */
+        private fun opaquer(c: Int): Int {
+            val a = (c ushr 24) / 255f
+            return withAlpha(c, 1f - (1f - a) * 0.45f)
+        }
+
+        private fun withAlpha(rgb: Int, a: Float) = ((a.coerceIn(0f, 1f) * 255 + 0.5f).toInt() shl 24) or (rgb and 0xFFFFFF)
+
+        /** Channel-wise (alpha included) blend from [a] to [b]. */
+        private fun mixColor(a: Int, b: Int, t: Float): Int {
+            fun ch(shift: Int) = (((a ushr shift) and 0xFF) + (((b ushr shift) and 0xFF) - ((a ushr shift) and 0xFF)) * t + 0.5f).toInt()
+            return (ch(24) shl 24) or (ch(16) shl 16) or (ch(8) shl 8) or ch(0)
+        }
 
         fun isNight(context: Context) =
             context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
@@ -85,11 +136,14 @@ class KeyboardTheme(
             Prefs.ThemeMode.DARK -> true
         }
 
-        fun forContext(context: Context, glass: Boolean = false, blur: Boolean = false): KeyboardTheme {
+        /** [tintAmount] overrides the saved Tint Amount (0..100), for a preview while dragging. */
+        fun forContext(context: Context, glass: Boolean = false, blur: Boolean = false, tintAmount: Int? = null): KeyboardTheme {
             val night = isDark(context)
+            val prefs = Prefs.get(context)
+            val tint = (tintAmount ?: prefs.glassTint) / 100f
             return when {
-                glass && night -> glassDark(blur)
-                glass -> glassLight(blur)
+                glass && night -> glassDark(blur, tint, prefs.glassBorders)
+                glass -> glassLight(blur, tint, prefs.glassBorders)
                 night -> dark
                 else -> light
             }

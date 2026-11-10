@@ -27,6 +27,14 @@ enum class SettingsIcon(val color: Int) {
     FEEDBACK(0xFFFF2D55.toInt()),
     REPLACEMENT(0xFF8E8E93.toInt()),
     LEARNED(0xFFFF9F0A.toInt()),
+    /** Settings > Keyboard (iOS: grey, a keyboard). */
+    KEYBOARD(0xFF8E8E93.toInt()),
+    /** Settings > Sounds & Haptics (iOS: red, a speaker). */
+    SOUNDS(0xFFFF3B30.toInt()),
+    /** Settings > Privacy Policy (iOS Privacy & Security: blue, a raised hand). */
+    PRIVACY(0xFF007AFF.toInt()),
+    /** Settings > Reset (grey, a circular arrow). */
+    RESET(0xFF8E8E93.toInt()),
     ;
 
     fun drawable(context: Context): Drawable = Icon(this, context.resources.displayMetrics.density)
@@ -77,7 +85,7 @@ enum class SettingsIcon(val color: Int) {
                         box.centerX() + box.width() * 0.42f, box.centerY() + box.width() * 0.42f)
                     canvas.drawArc(c, 90f, 180f, true, fg)
                 }
-                LAYOUT -> {
+                KEYBOARD, LAYOUT -> {
                     // A small keyboard: rounded outline with key dots.
                     fg.strokeWidth = s * 0.06f
                     val k = RectF(box.left - s * 0.02f, box.top + box.height() * 0.18f, box.right + s * 0.02f, box.bottom - box.height() * 0.12f)
@@ -92,7 +100,7 @@ enum class SettingsIcon(val color: Int) {
                 }
                 TOOLBAR -> Glyphs.chevron(canvas, box, fg, 0f)
                 CLIPBOARD -> Glyphs.clipboard(canvas, box, fg)
-                FEEDBACK -> {
+                FEEDBACK, SOUNDS -> {
                     // A speaker with a sound wave.
                     fg.style = Paint.Style.FILL
                     path.reset()
@@ -109,6 +117,40 @@ enum class SettingsIcon(val color: Int) {
                     canvas.drawArc(w, -45f, 90f, false, fg)
                 }
                 REPLACEMENT -> label("→", 0.5f)
+                PRIVACY -> {
+                    // A raised hand: four fingers and a thumb over a palm.
+                    fg.style = Paint.Style.FILL
+                    val pw = box.width() * 0.62f
+                    val left = box.centerX() - pw / 2 + box.width() * 0.04f
+                    val palm = RectF(left, box.top + box.height() * 0.48f, left + pw, box.bottom)
+                    canvas.drawRoundRect(palm, pw * 0.32f, pw * 0.32f, fg)
+                    val fw = pw / 4.6f
+                    for (i in 0..3) {
+                        val fx = left + i * (pw - fw) / 3
+                        val ft = box.top + box.height() * (if (i == 1 || i == 2) 0.02f else 0.1f)
+                        canvas.drawRoundRect(RectF(fx, ft, fx + fw, palm.top + fw), fw / 2, fw / 2, fg)
+                    }
+                    path.reset()
+                    path.addRoundRect(RectF(left - fw * 1.5f, box.top + box.height() * 0.45f, left + fw * 0.2f, box.top + box.height() * 0.45f + fw),
+                        fw / 2, fw / 2, Path.Direction.CW)
+                    val m = android.graphics.Matrix().apply { setRotate(45f, left, box.top + box.height() * 0.5f) }
+                    path.transform(m)
+                    canvas.drawPath(path, fg)
+                }
+                RESET -> {
+                    // A circular arrow.
+                    canvas.drawArc(RectF(box.left + box.width() * 0.08f, box.top + box.height() * 0.08f,
+                        box.right - box.width() * 0.08f, box.bottom - box.height() * 0.08f), -60f, 290f, false, fg)
+                    fg.style = Paint.Style.FILL
+                    val ax = box.centerX() + box.width() * 0.42f * kotlin.math.cos(Math.toRadians(-60.0)).toFloat()
+                    val ay = box.centerY() + box.height() * 0.42f * kotlin.math.sin(Math.toRadians(-60.0)).toFloat()
+                    path.reset()
+                    path.moveTo(ax + box.width() * 0.2f, ay - box.height() * 0.02f)
+                    path.lineTo(ax - box.width() * 0.08f, ay - box.height() * 0.2f)
+                    path.lineTo(ax - box.width() * 0.04f, ay + box.height() * 0.14f)
+                    path.close()
+                    canvas.drawPath(path, fg)
+                }
                 LEARNED -> label("Ab", 0.4f)
                 KEYBOARDS -> {
                     fg.strokeWidth = s * 0.065f
@@ -122,4 +164,38 @@ enum class SettingsIcon(val color: Int) {
         @Deprecated("Deprecated in Java")
         override fun getOpacity() = PixelFormat.TRANSLUCENT
     }
+}
+
+/** A speaker glyph with [waves] sound waves (0 = quiet end of a volume slider), in [color]. */
+class SpeakerDrawable(private val color: Int, private val waves: Int) : Drawable() {
+    private val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        this.color = this@SpeakerDrawable.color
+        strokeCap = Paint.Cap.ROUND
+    }
+    private val path = Path()
+    override fun draw(canvas: Canvas) {
+        val b = RectF(bounds)
+        val s = b.height()
+        p.style = Paint.Style.FILL
+        path.reset()
+        path.moveTo(b.left, b.top + s * 0.36f)
+        path.lineTo(b.left + s * 0.2f, b.top + s * 0.36f)
+        path.lineTo(b.left + s * 0.46f, b.top + s * 0.14f)
+        path.lineTo(b.left + s * 0.46f, b.bottom - s * 0.14f)
+        path.lineTo(b.left + s * 0.2f, b.bottom - s * 0.36f)
+        path.lineTo(b.left, b.bottom - s * 0.36f)
+        path.close()
+        canvas.drawPath(path, p)
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = s * 0.08f
+        for (i in 1..waves) {
+            val r = s * (0.16f + 0.17f * i)
+            val cx = b.left + s * 0.4f
+            canvas.drawArc(RectF(cx - r, b.centerY() - r, cx + r, b.centerY() + r), -40f, 80f, false, p)
+        }
+    }
+    override fun setAlpha(alpha: Int) { p.alpha = alpha }
+    override fun setColorFilter(colorFilter: ColorFilter?) { p.colorFilter = colorFilter }
+    @Deprecated("Deprecated in Java")
+    override fun getOpacity() = PixelFormat.TRANSLUCENT
 }

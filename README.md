@@ -31,10 +31,13 @@ Requires Android 8.0 or newer. The Glass look's background blur needs Android 12
 - Shows Math Results as you type a sum (`12*4=`).
 
 **Look**
-- **Glass** (translucent, blurred, rounded) or **Classic** appearance, light or dark.
+- **Glass** (translucent, blurred, rounded) or **Classic** appearance, light or dark. Glass has
+  iOS 27's **Tint Amount** slider (More Clear to More Tinted) and **Show Borders**.
 - **Standard** (iPhone) or **Extended** key layout, the latter with comma and period keys and
   long-press symbol hints.
 - Optional number row, one-handed mode and adjustable keyboard height.
+- A settings app laid out like iOS Settings, with the same Keyboard page, swipe-back navigation
+  and iOS-style switches and sliders.
 
 **Extras**
 - **Paste suggestion:** what you just copied appears above the keys ("paste from Threads"); tap to
@@ -75,7 +78,8 @@ app/src/main/java/dev/leconnn/ioskeyboard/
   IosKeyboardService.kt   the input method: keys, suggestions, clipboard, languages
   KeyboardView.kt         drawing and touch handling for keys, bar, panels and popups
   KeyboardLayout.kt       key geometry, the number row, accents
-  SettingsActivity.kt     the settings app
+  SettingsActivity.kt     the settings app (pages on an iOS-style navigation stack)
+  ui/                     iOS controls: grouped lists, switch, slider, navigation stack
   text/                   dictionaries, prediction, correction, slide to type, learning
   emoji/                  the emoji panel
 app/src/main/assets/      word lists, next-word data, emoji names and search

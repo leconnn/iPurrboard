@@ -40,16 +40,6 @@
             </intent-filter>
         </activity>
 
-        <activity
-            android:name=".ToolbarSettingsActivity"
-            android:exported="false"
-            android:label="Toolbar" />
-
-        <activity
-            android:name=".LearnedWordsActivity"
-            android:exported="false"
-            android:label="Learned Words" />
-
         <!-- Pasted screenshots are served from here to the app they're pasted into. -->
         <provider
             android:name=".ClipImageProvider"

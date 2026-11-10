@@ -2,66 +2,31 @@ package dev.leconnn.ioskeyboard
 
 import android.annotation.SuppressLint
 import android.app.Activity
-import android.content.Context
-import android.os.Bundle
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
-import android.view.WindowInsets
 import android.graphics.drawable.ColorDrawable
 import android.view.HapticFeedbackConstants
 import android.view.ViewGroup
 import android.view.animation.DecelerateInterpolator
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import dev.leconnn.ioskeyboard.ui.IosList
-import dev.leconnn.ioskeyboard.ui.SwitchClock
-import dev.leconnn.ioskeyboard.ui.ThemeMode
 
 /**
- * Settings > Toolbar Buttons: the order of the buttons in the suggestion bar's toolbar (drag a row
+ * Settings > Toolbar: the order of the buttons in the suggestion bar's toolbar (drag a row
  * by its ≡ handle) and which are shown. A hidden button stays reachable from the
  * emoji-key menu. The same order can also be changed in the bar itself by holding a button.
  */
-class ToolbarSettingsActivity : Activity() {
+class ToolbarPage(private val activity: Activity, private val rerender: () -> Unit) {
 
-    private lateinit var prefs: Prefs
-    private lateinit var scroll: ScrollView
+    private val prefs = Prefs.get(activity)
+    private val isFinishing get() = activity.isFinishing
 
-    override fun attachBaseContext(newBase: Context) = super.attachBaseContext(ThemeMode.wrap(newBase))
-
-    override fun onResume() {
-        super.onResume()
-        // Light / Dark may have changed on the Appearance page while this screen was underneath.
-        ThemeMode.refreshIfChanged(this)
-    }
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        prefs = Prefs.get(this)
-        scroll = ScrollView(this)
-        scroll.setOnApplyWindowInsetsListener { v, insets ->
-            val bars = insets.getInsets(WindowInsets.Type.systemBars())
-            v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
-            insets
-        }
-        setContentView(scroll)
-        ThemeMode.styleBars(this)
-        render()
-    }
-
-    private fun render() {
-        val list = IosList(this)
-        scroll.setBackgroundColor(list.background)
-        list.backButton("Settings") { finish() }
-        list.largeTitle("Toolbar")
+    fun build(list: IosList) {
         list.section()
-        list.switchRow("Toolbar", prefs.toolbar) {
-            prefs.toolbar = it
-            scroll.postDelayed({ if (!isFinishing) render() }, SwitchClock.ANIM_MS)
-        }
+        list.switchRow("Toolbar", prefs.toolbar) { prefs.toolbar = it }
         list.footer("Buttons in the suggestion bar when there are no suggestions; otherwise the › button at its left shows them.")
         list.section("Order")
         // Builds without GIFs have no GIF button to order.
@@ -79,13 +44,11 @@ class ToolbarSettingsActivity : Activity() {
             "Text Editing adds a panel with arrows, select, copy and paste, " +
             (if (BuildConfig.GIFS) "GIFs a GIF search (GIPHY) and " else "and ") +
             "Voice Typing dictation; off here, they're off everywhere.")
-        scroll.removeAllViews()
-        scroll.addView(list.root)
     }
 
     @SuppressLint("ClickableViewAccessibility")
     private fun row(list: IosList, item: ToolbarItem, index: Int, count: Int, shown: Boolean): View {
-        fun text(s: String, size: Float, color: Int) = TextView(this).apply {
+        fun text(s: String, size: Float, color: Int) = TextView(activity).apply {
             text = s
             setTextSize(TypedValue.COMPLEX_UNIT_SP, size)
             setTextColor(color)
@@ -106,7 +69,7 @@ class ToolbarSettingsActivity : Activity() {
         } else {
             list.iosSwitch(shown) { on -> prefs.toolbarHidden = if (on) prefs.toolbarHidden - item else prefs.toolbarHidden + item }
         }
-        val row = LinearLayout(this).apply {
+        val row = LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             minimumHeight = list.dp(44)
@@ -206,6 +169,6 @@ class ToolbarSettingsActivity : Activity() {
         if (from !in order.indices || to !in order.indices || isFinishing) return
         order.add(to, order.removeAt(from))
         prefs.toolbarOrder = order
-        render()
+        rerender()
     }
 }

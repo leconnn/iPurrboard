@@ -111,6 +111,17 @@ class Prefs private constructor(val raw: SharedPreferences) {
         get() = runCatching { Appearance.valueOf(raw.getString(KEY_APPEARANCE, null) ?: "") }.getOrDefault(Appearance.GLASS)
         set(v) = raw.edit().putString(KEY_APPEARANCE, v.name).apply()
 
+    /**
+     * Liquid Glass Tint Amount, as in iOS 27's Settings > Appearance > Liquid Glass: 0 = More Clear,
+     * 50 = Default, 100 = More Tinted (more opaque, more contrast).
+     */
+    var glassTint: Int
+        get() = raw.getInt(KEY_GLASS_TINT, 50).coerceIn(0, 100)
+        set(v) = raw.edit().putInt(KEY_GLASS_TINT, v.coerceIn(0, 100)).apply()
+
+    /** Liquid Glass Show Borders: outline the keys and popups for more separation. */
+    var glassBorders by bool(KEY_GLASS_BORDERS, false)
+
     /** Hold time before accents, the trackpad and the emoji-key menu open. */
     enum class LongPress(val ms: Long, val label: String) { SHORT(250, "Short"), DEFAULT(400, "Default"), LONG(600, "Long") }
 
@@ -291,6 +302,8 @@ class Prefs private constructor(val raw: SharedPreferences) {
             putString(KEY_GIF_LAYOUT, KeyStyle.IOS.name)
             remove(KEY_PANEL_LAYOUT)
             putString(KEY_APPEARANCE, Appearance.GLASS.name)
+            putInt(KEY_GLASS_TINT, 50)
+            putBoolean(KEY_GLASS_BORDERS, false)
             putString(KEY_THEME_MODE, ThemeMode.AUTO.name)
             putString(KEY_HEIGHT, Height.DEFAULT.name)
             putString(KEY_PREVIEW_SIZE, PreviewSize.DEFAULT.name)
@@ -313,6 +326,8 @@ class Prefs private constructor(val raw: SharedPreferences) {
     companion object {
         private const val KEY_ONE_HANDED = "oneHanded"
         private const val KEY_APPEARANCE = "appearance"
+        private const val KEY_GLASS_TINT = "glassTint"
+        private const val KEY_GLASS_BORDERS = "glassBorders"
         const val KEY_THEME_MODE = "themeMode"
         private const val KEY_LONG_PRESS = "longPressDelay"
         private const val KEY_HEIGHT = "keyboardHeight"

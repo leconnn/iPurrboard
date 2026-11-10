@@ -575,14 +575,15 @@ class IosKeyboardService : InputMethodService(), KeyboardView.Listener {
         } else {
             w.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         }
-        if (Build.VERSION.SDK_INT >= 31) w.setBackgroundBlurRadius(if (blur) blurRadiusPx() else 0)
+        if (Build.VERSION.SDK_INT >= 31) w.setBackgroundBlurRadius(if (blur) blurRadiusPx(theme) else 0)
     }
 
     /** Liquid Glass top-corner radius in pixels (0 for Classic, whose top edge is square like iOS's). */
     private fun cornerPx(): Int =
         if (prefs.appearance == Prefs.Appearance.GLASS) (CORNER_PT * resources.displayMetrics.widthPixels / Geometry.WIDTH).toInt() else 0
 
-    private fun blurRadiusPx() = (BLUR_RADIUS_DP * resources.displayMetrics.density).toInt()
+    /** iOS's keyboard blur radius (UIKBRenderConfig: 30 pt light, 20 pt dark), in pixels. */
+    private fun blurRadiusPx(theme: KeyboardTheme) = (theme.blurRadiusDp * resources.displayMetrics.density).toInt()
 
     override fun onWindowShown() {
         super.onWindowShown()
@@ -1344,7 +1345,6 @@ class IosKeyboardService : InputMethodService(), KeyboardView.Listener {
         const val STICKER_THUMB_DP = 72
         const val CHIP_MS = 60_000L
         const val DAY_MS = 24 * 60 * 60 * 1000L
-        const val BLUR_RADIUS_DP = 24f
         /** An emptied field this long after the last delete was emptied by the app, not the keyboard. */
         private const val APP_EDIT_GAP_MS = 400L
         /** Liquid Glass keyboard top-corner radius, in iOS points. */

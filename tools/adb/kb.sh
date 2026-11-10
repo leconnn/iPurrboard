@@ -48,11 +48,12 @@ for n in ET.fromstring(x).iter('node'):
 clear_field() { adb $D shell input keycombination 113 29 2>/dev/null; adb $D shell input keyevent 67; }
 ime() { adb $D shell settings get secure default_input_method | tr -d '\r'; }
 
-# Settings (debug builds): setp KEY true|false|STRING ; getp prints the stored prefs XML.
+# Settings (debug builds): setp KEY true|false|NUMBER|STRING ; getp prints the stored prefs XML.
 PKG=dev.leconnn.ioskeyboard
 setp() {
   case "$2" in true|false) adb $D shell am broadcast -a $PKG.SET_PREF -p $PKG --es key "$1" --ez value "$2" >/dev/null ;;
-               *) adb $D shell am broadcast -a $PKG.SET_PREF -p $PKG --es key "$1" --es value "$2" >/dev/null ;; esac
+               ''|*[!0-9]*) adb $D shell am broadcast -a $PKG.SET_PREF -p $PKG --es key "$1" --es value "$2" >/dev/null ;;
+               *) adb $D shell am broadcast -a $PKG.SET_PREF -p $PKG --es key "$1" --ei value "$2" >/dev/null ;; esac
 }
 getp() { adb $D shell run-as $PKG cat /data/user_de/0/$PKG/shared_prefs/settings.xml; }
 shown() { adb $D shell dumpsys input_method | grep -m1 -o 'mInputShown=true'; }
