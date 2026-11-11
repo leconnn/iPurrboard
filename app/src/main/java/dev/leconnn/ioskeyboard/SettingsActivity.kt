@@ -843,7 +843,7 @@ class SettingsActivity : Activity() {
             }
             else -> {
                 list.headerCardRow(R.drawable.ic_launcher_art, "iPurrboard ${r.version}", sizeLabel(r.size))
-                if (r.notes.isNotBlank()) list.customRow(paragraph(list, r.notes.trim(), list.label))
+                if (r.notes.isNotBlank()) list.customRow(paragraph(list, plainNotes(r.notes), list.label))
             }
         }
         if (r != null) {
@@ -876,6 +876,11 @@ class SettingsActivity : Activity() {
         v.text = "Downloading… ${(updateProgress.coerceIn(0f, 1f) * 100).toInt()}%"
         updateStatus = v
         return v
+    }
+
+    /** Release notes are written in Markdown on GitHub: show them as plain text with bullets. */
+    private fun plainNotes(md: String) = md.trim().lines().joinToString(NEWLINE) { line ->
+        line.replace("**", "").replace(BULLET, "•  ").replace(HEADING, "")
     }
 
     private fun sizeLabel(bytes: Long) = if (bytes <= 0) "" else android.text.format.Formatter.formatShortFileSize(this, bytes)
@@ -1034,6 +1039,9 @@ class SettingsActivity : Activity() {
         /** Tint Amount snaps to Default within this many steps of the middle. */
         private const val TINT_SNAP = 4
         private const val STATE_ROUTES = "routes"
+        private const val NEWLINE = "\n"
+        private val BULLET = Regex("""^\s*[-*] """)
+        private val HEADING = Regex("""^#+\s*""")
         /** The splash's key as a fraction of its icon view's width (measured). */
         private const val SPLASH_KEY_FRACTION = 0.79f
         /** Set by the keyboard's dictation panel: ask for the microphone permission on arrival. */
