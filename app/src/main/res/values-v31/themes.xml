@@ -5,5 +5,6 @@
     <style name="AppTheme" parent="android:Theme.DeviceDefault.Light.NoActionBar">
         <item name="android:windowAnimationStyle">@style/IosPushAnimation</item>
         <item name="android:windowSplashScreenBackground">#F2F2F7</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_key</item>
     </style>
 </resources>
