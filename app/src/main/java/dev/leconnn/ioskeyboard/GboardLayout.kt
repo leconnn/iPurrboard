@@ -73,7 +73,7 @@ object GboardLayouts : KeyLayoutSet {
             listOf(leftKey(KeyKind.SHIFT, "", 2)) +
             chars("zxcvbnm", 2, 15f, BOTTOM_HINTS) +
             listOf(delete()) +
-            bottomRow(leftKey(KeyKind.TO_NUMBERS, "?123", 3))
+            bottomRow(leftKey(KeyKind.TO_NUMBERS, "123", 3))
 
     override val numbers: List<Key> =
         chars("1234567890", 0, 0f) +
@@ -86,7 +86,7 @@ object GboardLayouts : KeyLayoutSet {
     override val symbols: List<Key> =
         chars("~`|•√π÷×¶∆", 0, 0f) +
             chars("£¢€¥^°={}\\", 1, 0f) +
-            listOf(leftKey(KeyKind.TO_NUMBERS, "?123", 2)) +
+            listOf(leftKey(KeyKind.TO_NUMBERS, "123", 2)) +
             chars("%©®™✓[]", 2, 15f) +
             listOf(delete()) +
             bottomRow(leftKey(KeyKind.TO_LETTERS, "ABC", 3))

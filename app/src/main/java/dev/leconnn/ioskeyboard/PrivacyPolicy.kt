@@ -5,13 +5,14 @@ package dev.leconnn.ioskeyboard
  * repository root (same sections, same wording) and with what the code actually does.
  */
 object PrivacyPolicy {
-    const val UPDATED = "November 10, 2026"
+    const val UPDATED = "November 11, 2026"
 
     /** The features that go online in this build (GIFs only where a build includes them). */
     private val online = if (BuildConfig.GIFS) "GIFs and Emoji Kitchen stickers" else "Emoji Kitchen stickers"
 
     val SUMMARY = "iPurrboard has no accounts, ads, analytics or tracking. What you type stays on " +
-        "your phone. The keyboard only goes online for features you turn on: $online."
+        "your phone. The keyboard only goes online to check for updates (once a day, which you can turn " +
+        "off) and for features you turn on: $online."
 
     /** Section title, then its paragraphs. */
     val SECTIONS: List<Pair<String, List<String>>> = listOf(
@@ -47,6 +48,14 @@ object PrivacyPolicy {
                 "can see which emoji combinations are shown. Google's privacy policy applies: policies.google.com/privacy.",
             "Results and pictures are cached on your phone for a short time to load faster.",
         ),
+        "Software updates" to listOf(
+            "Once a day, iPurrboard asks GitHub (github.com, where it is published) whether a newer version " +
+                "exists. GitHub receives your IP address and an ordinary request; nothing about you or what you " +
+                "type is sent. GitHub's privacy statement applies. Turn it off in Settings > Software Update > " +
+                "Automatic Checks.",
+            "An update is only downloaded when you tap Download and Install, and Android asks you to confirm " +
+                "before it is installed.",
+        ),
         "What is stored, and where" to listOf(
             "Settings, learned words, clipboard history, emoji recents and text replacements are stored only " +
                 "on your phone, in the app's private storage. They are not included in Android backups.",
@@ -56,7 +65,8 @@ object PrivacyPolicy {
         "Permissions" to listOf(
             "Microphone: only for voice typing, asked the first time you use it.",
             "Photos: only for Save Recent Screenshots, asked when you turn it on.",
-            "Internet: only for $online.",
+            "Internet: for update checks and $online.",
+            "Install apps: only to install an update you chose to download; Android asks you to allow it once.",
             "Vibration: for key feedback.",
         ),
         "No sharing or selling" to listOf(

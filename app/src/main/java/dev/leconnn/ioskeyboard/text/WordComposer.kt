@@ -168,7 +168,16 @@ class WordComposer(context: Context, private val ic: () -> InputConnection?) {
         swiped = null
     }
 
+    /**
+     * The cursor sits inside the word being composed (Gboard: tap into a word and the bar offers
+     * replacements for the whole word). [midOffset] is the cursor's place in [word]. Typing or
+     * deleting there edits the text normally; picking a suggestion replaces the whole word.
+     */
+    private var midWord = false
+    private var midOffset = 0
+
     private fun clearWord() {
+        midWord = false
         word.clear()
         touches.clear()
         wordContext = null
@@ -190,6 +199,7 @@ class WordComposer(context: Context, private val ic: () -> InputConnection?) {
             val conn = ic()
             if (conn?.getTextBeforeCursor(1, 0)?.toString() == " ") conn.deleteSurroundingText(1, 0)
         }
+        if (midWord) { leaveMidWord(); return false }
         val isLetter = text.length == 1 && text[0].isLetter()
         val isApostrophe = text == "'" && word.isNotEmpty()
         if (!isLetter && !isApostrophe) return false
@@ -210,6 +220,8 @@ class WordComposer(context: Context, private val ic: () -> InputConnection?) {
     fun finishWord(separator: String) {
         val conn = ic() ?: return
         if (word.isEmpty()) return
+        // A space or punctuation typed inside a word splits it; nothing is autocorrected.
+        if (midWord) { leaveMidWord(); return }
         val original = word.toString()
         // Space accepts an inline prediction, as on iOS (before any autocorrection).
         val inline = shownGhost.takeIf { it.isNotEmpty() && separator == " " }
@@ -299,6 +311,7 @@ class WordComposer(context: Context, private val ic: () -> InputConnection?) {
             }
         }
         if (word.isEmpty()) return false
+        if (midWord) { leaveMidWord(); return false }
         word.deleteCharAt(word.length - 1)
         if (touches.isNotEmpty()) touches.removeAt(touches.size - 1)
         if (word.isEmpty()) {
@@ -354,7 +367,17 @@ class WordComposer(context: Context, private val ic: () -> InputConnection?) {
         conn.finishComposingText()
         learn(text, context)
         clearWord()
-        conn.commitText(" ", 1)
+        // A word picked up from the text (a tap into or after it) may already have a space after
+        // it: step over that one instead of adding another.
+        val next = conn.getTextAfterCursor(1, 0)?.toString().orEmpty()
+        if (next == " ") {
+            conn.beginBatchEdit()
+            conn.commitText(" ", 1)
+            conn.deleteSurroundingText(0, 1)
+            conn.endBatchEdit()
+        } else {
+            conn.commitText(" ", 1)
+        }
         return true
     }
 
@@ -364,6 +387,15 @@ class WordComposer(context: Context, private val ic: () -> InputConnection?) {
      * backspace into one), pick that word up so the bar predicts and corrects it, like iOS.
      */
     fun onSelectionChanged(selStart: Int, selEnd: Int, candidatesStart: Int, candidatesEnd: Int) {
+        if (word.isNotEmpty() && midWord) {
+            // Still in the same word at the same place (this is the update for our own
+            // composing region): keep it. Anywhere else: stop, and let the next update pick up
+            // whatever the cursor is in now.
+            val same = selStart == selEnd && candidatesStart >= 0 && candidatesEnd - candidatesStart == word.length &&
+                selStart == candidatesStart + midOffset
+            if (!same) leaveMidWord()
+            return
+        }
         if (word.isNotEmpty()) {
             // With an inline prediction the composing text runs past the cursor.
             // (the cursor at the end of the grey text means the user tapped there, not typing).
@@ -378,24 +410,40 @@ class WordComposer(context: Context, private val ic: () -> InputConnection?) {
         if (selStart == selEnd && candidatesStart < 0 && selStart > 0) resumeWord(selStart)
     }
 
-    /** Starts composing the word that ends at [cursor], if there is one. */
+    /**
+     * Starts composing the word the cursor is in or at the end of, if there is one: the bar then
+     * predicts and corrects it, and a suggestion replaces the whole word (iOS at a word's end;
+     * Gboard anywhere in it).
+     */
     private fun resumeWord(cursor: Int) {
         if (!active || swiped != null) return
         val conn = ic() ?: return
         val before = conn.getTextBeforeCursor(MAX_CONTEXT, 0)?.toString() ?: return
         val run = TRAILING_WORD.find(before)?.value ?: return
-        if (run.last() == '\'' || run.last() == '’' || run.length > MAX_RESUME) return
         // Not part of an address, handle, number or path ("me@mail", "#tag", "v2beta").
         val prev = before.getOrNull(before.length - run.length - 1)
         if (prev != null && (prev.isLetterOrDigit() || prev in "@#/_\\.:-")) return
-        val after = conn.getTextAfterCursor(1, 0)?.toString().orEmpty()
-        if (after.isNotEmpty() && (after[0].isLetterOrDigit() || after[0] == '\'' || after[0] == '’')) return
-        if (!conn.setComposingRegion(cursor - run.length, cursor)) return
-        word.append(run)
-        repeat(run.length) { touches.add(null) }
+        val after = conn.getTextAfterCursor(MAX_RESUME + 1, 0)?.toString().orEmpty()
+        val tail = LEADING_WORD.find(after)?.value.orEmpty()
+        val whole = run + tail
+        if (whole.last() == '\'' || whole.last() == '’' || whole.length > MAX_RESUME) return
+        // The word must end there too (not "word2", "name@host", "snake_case").
+        val next = after.getOrNull(tail.length)
+        if (next != null && (next.isLetterOrDigit() || next in "@_")) return
+        if (!conn.setComposingRegion(cursor - run.length, cursor + tail.length)) return
+        word.append(whole)
+        repeat(whole.length) { touches.add(null) }
         wordContext = before.dropLast(run.length)
+        midWord = tail.isNotEmpty()
+        midOffset = run.length
         ghostAllowed = false
         refresh()
+    }
+
+    /** Stops composing a word the cursor was inside, leaving its text as it is. */
+    private fun leaveMidWord() {
+        ic()?.finishComposingText()
+        clearWord()
     }
 
     /** Recomputes the bar for the text before the cursor, in the background. */
@@ -549,6 +597,8 @@ class WordComposer(context: Context, private val ic: () -> InputConnection?) {
         const val GHOST_COLOR = 0xFF8E8E93.toInt()
         /** A word (letters, inner apostrophes) right before the cursor. */
         val TRAILING_WORD = Regex("""\p{L}[\p{L}'’]*$""")
+        /** Letters right after the cursor (the rest of a word the cursor is in). */
+        val LEADING_WORD = Regex("""^[\p{L}'’]*""")
         val EMPTY: List<Predictor.Slot?> = listOf(null, null, null)
         /** Punctuation that ends a word and triggers autocorrection, as on iOS. */
         val WORD_END = setOf(".", ",", "!", "?", ";", ":", "\n")

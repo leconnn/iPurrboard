@@ -104,4 +104,16 @@ class CorrectorTest {
 
     /** Words learned after the previous word win close calls. */
     @Test fun contextBreaksTies() = assertEquals("work", corrector.autocorrect("worl", context = setOf("work")))
+
+    @Test fun barRanksCorrectionsWithCompletions() {
+        // Not autocorrected (as when "helo" is a known word in another enabled language), the bar
+        // still offers the far more likely "hello" before the rare completion "heloise".
+        val p = Predictor(dict, corrector).predict("helo", null, sentenceStart = false, autocorrect = false)
+        assertEquals("hello", p.centre?.text)
+    }
+
+    @Test fun unfinishedWordStillCompletes() {
+        val p = Predictor(dict, corrector).predict("worl", null, sentenceStart = false, autocorrect = false)
+        assertEquals("world", p.centre?.text)
+    }
 }

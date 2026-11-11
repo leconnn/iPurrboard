@@ -41,7 +41,8 @@ class PopupOverlay(private val keyboard: KeyboardView) : View(keyboard.context) 
     private var lastNeeded = 0L
     private val shrink = Runnable {
         if (keyboard.popupsVisible() || SystemClock.uptimeMillis() - lastNeeded < SHRINK_DELAY_MS) reschedule()
-        else setReach(0f)
+        // Down to what the keys on show always need (the number row's bubbles), not below.
+        else setReach(kotlin.math.ceil(keyboard.standingHeadroomPx()))
     }
 
 
@@ -53,9 +54,24 @@ class PopupOverlay(private val keyboard: KeyboardView) : View(keyboard.context) 
     override fun onDraw(canvas: Canvas) {
         // Keys start below the headroom the window really has now, and the suggestion bar.
         val actualHeadroom = (height - keyboard.height).coerceAtLeast(0).toFloat()
-        if (keyboard.drawPopups(canvas, actualHeadroom + keyboard.barPx)) postInvalidateOnAnimation()
         val need = keyboard.popupHeadroomNeededPx()
         if (need > 0f) hold(need)
+        val standing = kotlin.math.ceil(keyboard.standingHeadroomPx())
+        if (standing > reach) setReach(standing)
+        // The window grows a frame after a touch: until it has room, show nothing rather than a
+        // popup cut off at the top (the number row's bubble used to flash clipped first).
+        if (need > actualHeadroom + 1f) { postInvalidateOnAnimation(); return }
+        if (keyboard.drawPopups(canvas, actualHeadroom + keyboard.barPx)) postInvalidateOnAnimation()
+    }
+
+    /**
+     * Keeps the standing room ready (the keys' bubbles need it the moment a key is touched); a
+     * change of keys (number row switched, another page) grows it now or shrinks it a bit later.
+     */
+    fun ensureStanding() {
+        if (!window.isShowing) return
+        val s = kotlin.math.ceil(keyboard.standingHeadroomPx())
+        if (s > reach) setReach(s) else if (s < reach) reschedule()
     }
 
     /** A popup reaching [px] above the keyboard is about to show or is showing: make room, keep it a while. */
@@ -82,6 +98,7 @@ class PopupOverlay(private val keyboard: KeyboardView) : View(keyboard.context) 
             keyboard.post { if (keyboard.isAttachedToWindow && keyboard.width > 0) show() }
             return
         }
+        reach = maxOf(reach, kotlin.math.ceil(keyboard.standingHeadroomPx()))
         if (window.isShowing) place() else {
             val (y, w, h) = bounds()
             window.width = w

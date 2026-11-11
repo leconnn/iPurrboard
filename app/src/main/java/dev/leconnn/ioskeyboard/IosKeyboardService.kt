@@ -228,7 +228,7 @@ class IosKeyboardService : InputMethodService(), KeyboardView.Listener {
             if (iosPasteStyle) return listOf(Chip("Screenshot", ChipIcon.NONE, shot.thumb, subtitle = "paste from Screenshots"))
             return listOf(Chip("Screenshot", ChipIcon.NONE, shot.thumb))
         }
-        if (copy == null) return emptyList()
+        if (copy == null) return updateChip()
         view.removeCallbacks(chipExpired)
         view.postDelayed(chipExpired, CHIP_MS - (now - copy.at))
         if (iosPasteStyle) {
@@ -244,6 +244,23 @@ class IosKeyboardService : InputMethodService(), KeyboardView.Listener {
         // spaces collapse); tapping inserts the text exactly as copied.
         return listOf(Chip(oneLine(copy.text), ChipIcon.CLIPBOARD)) +
             details.map { Chip(oneLine(it.text), chipIcon(it.kind)) }
+    }
+
+    /**
+     * A new version is waiting: the bar says so once (until tapped), and the tap opens Settings ›
+     * Software Update.
+     */
+    private fun updateChip(): List<Chip> {
+        val r = Updater.pending(this) ?: return emptyList()
+        if (prefs.updateNoticeSeen == r.version) return emptyList()
+        chipActions = listOf({
+            prefs.updateNoticeSeen = r.version
+            startActivity(android.content.Intent(this, SettingsActivity::class.java)
+                .putExtra(SettingsActivity.EXTRA_PAGE, SettingsActivity.Page.UPDATE.name)
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP))
+        })
+        return if (iosPasteStyle) listOf(Chip("iPurrboard ${r.version} is available", ChipIcon.NONE, subtitle = "tap to update"))
+        else listOf(Chip("Update to iPurrboard ${r.version}", ChipIcon.NONE))
     }
 
     /** Settings > Clipboard > Copied Items Style: iOS 27's paste banner, or Gboard's chips. */
@@ -616,6 +633,8 @@ class IosKeyboardService : InputMethodService(), KeyboardView.Listener {
         selEnd = info.initialSelEnd
         recap = null
         readClipboard()
+        // Software Update: at most once a day; a found update shows once as a chip in the bar.
+        Updater.checkIfDue(this) { showSuggestions() }
         composer.reset()
         applyAppearance()
         scanScreenshots()

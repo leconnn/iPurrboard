@@ -35,6 +35,8 @@ enum class SettingsIcon(val color: Int) {
     PRIVACY(0xFF007AFF.toInt()),
     /** Settings > Reset (grey, a circular arrow). */
     RESET(0xFF8E8E93.toInt()),
+    /** Settings › Software Update (iOS: grey, a gear; here an arrow into a tray). */
+    UPDATE(0xFF8E8E93.toInt()),
     ;
 
     fun drawable(context: Context): Drawable = Icon(this, context.resources.displayMetrics.density)
@@ -135,6 +137,22 @@ enum class SettingsIcon(val color: Int) {
                         fw / 2, fw / 2, Path.Direction.CW)
                     val m = android.graphics.Matrix().apply { setRotate(45f, left, box.top + box.height() * 0.5f) }
                     path.transform(m)
+                    canvas.drawPath(path, fg)
+                }
+                UPDATE -> {
+                    // An arrow down into a tray.
+                    fg.strokeWidth = s * 0.075f
+                    canvas.drawLine(box.centerX(), box.top + box.height() * 0.05f, box.centerX(), box.top + box.height() * 0.62f, fg)
+                    path.reset()
+                    path.moveTo(box.centerX() - box.width() * 0.22f, box.top + box.height() * 0.4f)
+                    path.lineTo(box.centerX(), box.top + box.height() * 0.64f)
+                    path.lineTo(box.centerX() + box.width() * 0.22f, box.top + box.height() * 0.4f)
+                    canvas.drawPath(path, fg)
+                    path.reset()
+                    path.moveTo(box.left + box.width() * 0.08f, box.top + box.height() * 0.62f)
+                    path.lineTo(box.left + box.width() * 0.08f, box.bottom - box.height() * 0.08f)
+                    path.lineTo(box.right - box.width() * 0.08f, box.bottom - box.height() * 0.08f)
+                    path.lineTo(box.right - box.width() * 0.08f, box.top + box.height() * 0.62f)
                     canvas.drawPath(path, fg)
                 }
                 RESET -> {

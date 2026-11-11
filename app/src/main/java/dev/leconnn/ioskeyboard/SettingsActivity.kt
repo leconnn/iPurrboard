@@ -74,6 +74,7 @@ class SettingsActivity : Activity() {
         RETENTION("Keep History For"),
         PRIVACY("Privacy Policy"),
         RESET("Reset"),
+        UPDATE("Software Update"),
     }
 
     /** A page and its argument (the replacement being edited; -1 for none). */
@@ -202,6 +203,13 @@ class SettingsActivity : Activity() {
         overridePendingTransition(android.R.anim.fade_in, 0)
     }
 
+    /** Opened again while running (the keyboard's update chip): show the page it asks for. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        val linked = intent.getStringExtra(EXTRA_PAGE)?.let { n -> Page.entries.firstOrNull { it.name == n } } ?: return
+        if (stack.top?.let { routes[it]?.page } != linked) push(Route(linked))
+    }
+
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putStringArrayList(STATE_ROUTES, ArrayList(stack.pages.mapNotNull { routes[it] }.map { "${it.page.name}:${it.arg}" }))
@@ -215,6 +223,8 @@ class SettingsActivity : Activity() {
     override fun onResume() {
         super.onResume()
         if (ThemeMode.refreshIfChanged(this)) return
+        // Once a day (Automatic Checks): an update shows up on the root page when found.
+        Updater.checkIfDue(this) { if (!isFinishing) stack.top?.let { render(it) } }
         prefs.raw.registerOnSharedPreferenceChangeListener(prefsListener)
         stack.top?.let { render(it) }
         updatePreview()
@@ -301,6 +311,7 @@ class SettingsActivity : Activity() {
                 "Pinned items are kept until you unpin them.") { prefs.clipboardRetention = it }
             Page.PRIVACY -> privacy(list)
             Page.RESET -> reset(list)
+            Page.UPDATE -> softwareUpdate(list)
         }
         page.setContent(list.root)
         page.scroll.post { page.scroll.scrollTo(0, y) }
@@ -369,6 +380,12 @@ class SettingsActivity : Activity() {
             else getSystemService(InputMethodManager::class.java).showInputMethodPicker()
         }
 
+        Updater.pending(this)?.let { r ->
+            list.section()
+            list.navRow("Software Update Available", badge = 1) { open(Page.UPDATE) }
+            list.footer("iPurrboard ${r.version} is ready to download.")
+        }
+
         if (!selected) {
             list.section("Get Started")
             list.navRow("1.  Enable iPurrboard", if (enabled) "Done" else "", titleColor = list.blue) {
@@ -398,6 +415,9 @@ class SettingsActivity : Activity() {
         list.navRow("Clipboard", icon = SettingsIcon.CLIPBOARD) { open(Page.CLIPBOARD) }
 
         list.section()
+        list.navRow("Software Update", Updater.pending(this)?.version?.let { "$it available" } ?: "", icon = SettingsIcon.UPDATE) {
+            open(Page.UPDATE)
+        }
         list.navRow("Privacy Policy", icon = SettingsIcon.PRIVACY) { open(Page.PRIVACY) }
         list.navRow("Reset", icon = SettingsIcon.RESET) { open(Page.RESET) }
         list.footer("iPurrboard ${versionName()}. Not affiliated with Apple or Google.")
@@ -411,7 +431,9 @@ class SettingsActivity : Activity() {
             background = null
             setTextColor(list.label)
             setHintTextColor(list.secondary)
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            // Multi-line, so the keyboard shows its plain return key (as in a note or a message).
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            maxLines = 4
         }
         tryField = field
         // The field also takes images (Android 12+), so GIFs, stickers and screenshots can be tried
@@ -786,6 +808,119 @@ class SettingsActivity : Activity() {
                 getSystemService(InputMethodManager::class.java).showSoftInput(phrase, 0)
             }
         }
+    }
+
+    // ---- Software Update ----------------------------------------------------------------
+
+    /** Where the update stands on this page: checking, downloading (with progress), downloaded. */
+    private var updateChecking = false
+    private var updateError: String? = null
+    private var updateProgress = -1f
+    private var updateFile: java.io.File? = null
+    private var updateStatus: TextView? = null
+    private var updateCheckedThisVisit = false
+
+    /** Settings › Software Update, as iOS's: the new version, its notes, Download and Install. */
+    private fun softwareUpdate(list: IosList) {
+        if (!Updater.available) {
+            list.section()
+            list.placeholderRow("Updates aren't set up for this build")
+            list.footer("This build has no update source (the personal build needs its GitHub token in local.properties).")
+            return
+        }
+        // Opening the page checks right away, as on iOS.
+        if (!updateCheckedThisVisit) {
+            updateCheckedThisVisit = true
+            checkForUpdate()
+        }
+        val r = Updater.pending(this)
+        list.section()
+        when {
+            updateChecking && r == null -> list.placeholderRow("Checking for Update…")
+            r == null -> {
+                list.placeholderRow("iPurrboard ${BuildConfig.VERSION_NAME} is up to date")
+                list.actionRow("Check Now") { checkForUpdate() }
+            }
+            else -> {
+                list.headerCardRow(R.drawable.ic_launcher_art, "iPurrboard ${r.version}", sizeLabel(r.size))
+                if (r.notes.isNotBlank()) list.customRow(paragraph(list, r.notes.trim(), list.label))
+            }
+        }
+        if (r != null) {
+            list.section()
+            val status = updateStatus(list)
+            val file = updateFile
+            when {
+                file != null -> list.actionRow("Install Now") { installUpdate(file) }
+                updateProgress >= 0f -> list.customRow(status)
+                else -> list.actionRow("Download and Install") { downloadUpdate(r) }
+            }
+            list.footer("Android will ask you to confirm the update. Your settings, words and clipboard stay.")
+        }
+        updateError?.let { list.footer(it) }
+
+        list.section()
+        list.switchRow("Automatic Checks", prefs.autoUpdateCheck) { prefs.autoUpdateCheck = it }
+        val last = Updater.lastChecked(this)
+        list.footer("Looks for a new version once a day (it asks GitHub, which sees an ordinary request; nothing " +
+            "about you is sent)." + if (last > 0) " Last checked " +
+            android.text.format.DateUtils.getRelativeTimeSpanString(last, System.currentTimeMillis(), 60_000L) + "." else "")
+    }
+
+    private fun updateStatus(list: IosList): TextView {
+        val v = updateStatus ?: TextView(this).apply {
+            setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 17f)
+        }
+        (v.parent as? android.view.ViewGroup)?.removeView(v)
+        v.setTextColor(list.secondary)
+        v.text = "Downloading… ${(updateProgress.coerceIn(0f, 1f) * 100).toInt()}%"
+        updateStatus = v
+        return v
+    }
+
+    private fun sizeLabel(bytes: Long) = if (bytes <= 0) "" else android.text.format.Formatter.formatShortFileSize(this, bytes)
+
+    private fun checkForUpdate() {
+        updateChecking = true
+        updateError = null
+        Updater.check(this) { result ->
+            updateChecking = false
+            if (result.isFailure) updateError = "Couldn't check for updates. Check your connection and try again."
+            if (!isFinishing) stack.pages.forEach { p -> if (routes[p]?.page == Page.UPDATE || routes[p]?.page == Page.MAIN) render(p) }
+        }
+        stack.top?.let { render(it) }
+    }
+
+    private fun downloadUpdate(r: Updater.Release) {
+        updateError = null
+        updateProgress = 0f
+        stack.top?.let { render(it) }
+        Updater.download(this, r, progress = { p ->
+            updateProgress = p
+            updateStatus?.text = "Downloading… ${(p * 100).toInt()}%"
+        }) { result ->
+            updateProgress = -1f
+            result.onSuccess { f -> updateFile = f; installUpdate(f) }
+                .onFailure { updateError = "The download didn't finish. Check your connection and try again." }
+            if (!isFinishing) stack.top?.let { render(it) }
+        }
+    }
+
+    /** Android first asks to allow installs from iPurrboard (once), then shows its installer. */
+    private fun installUpdate(file: java.io.File) {
+        if (!Updater.canInstall(this)) {
+            IosAlert(this)
+                .title("Allow Updates")
+                .message("To install updates, allow iPurrboard to install apps, then come back and tap Install Now.")
+                .action("Cancel", IosAlert.Style.CANCEL)
+                .action("Open Settings", IosAlert.Style.PREFERRED) {
+                    startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, android.net.Uri.parse("package:$packageName")))
+                }
+                .show()
+            return
+        }
+        runCatching { Updater.install(this, file) }
+            .onFailure { updateError = "The update couldn't be installed." ; stack.top?.let { render(it) } }
     }
 
     /** Settings › Reset, named as iOS's Reset page. */

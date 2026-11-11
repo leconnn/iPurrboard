@@ -123,6 +123,37 @@ class IosList(private val context: Context) {
         addToCard(row, 0)
     }
 
+    /** A card row with a large icon, a title and a detail line (Software Update's new version). */
+    fun headerCardRow(icon: Int, title: String, detail: String) {
+        val img = ImageView(context).apply {
+            setImageResource(icon)
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            background = GradientDrawable().apply { cornerRadius = dp(13).toFloat() }
+            clipToOutline = true
+        }
+        val texts = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(TextView(context).apply {
+                text = title
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                setTextColor(label)
+            })
+            if (detail.isNotEmpty()) addView(TextView(context).apply {
+                text = detail
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                setTextColor(secondary)
+            })
+        }
+        addToCard(LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            addView(img, LinearLayout.LayoutParams(dp(56), dp(56)))
+            addView(texts, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(14) })
+        }, dp(16))
+    }
+
     /** Starts a section; rows added afterwards go into its card until the next section. */
     fun section(header: String? = null) {
         if (header != null) {
@@ -200,6 +231,7 @@ class IosList(private val context: Context) {
         value: String = "",
         titleColor: Int = label,
         icon: SettingsIcon? = null,
+        badge: Int = 0,
         onClick: () -> Unit,
     ): TextView {
         val valueView = TextView(context).apply {
@@ -216,6 +248,16 @@ class IosList(private val context: Context) {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             addView(valueView)
+            // iOS's red count badge (e.g. Software Update Available).
+            if (badge > 0) addView(TextView(context).apply {
+                text = badge.toString()
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                setTextColor(0xFFFFFFFF.toInt())
+                gravity = Gravity.CENTER
+                minWidth = dp(24)
+                setPadding(dp(7), 0, dp(7), 0)
+                background = GradientDrawable().apply { setColor(red); cornerRadius = dp(12).toFloat() }
+            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(24)).apply { marginStart = dp(8) })
             addView(chevron())
         }
         val r = row(title, trailing, titleColor, icon)

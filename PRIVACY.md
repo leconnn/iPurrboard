@@ -1,9 +1,10 @@
 # iPurrboard Privacy Policy
 
-_Last updated: November 10, 2026_
+_Last updated: November 11, 2026_
 
 iPurrboard has no accounts, ads, analytics or tracking. What you type stays on your phone. The
-keyboard only goes online for features you turn on: Emoji Kitchen stickers.
+keyboard only goes online to check for updates (once a day, which you can turn off) and for features
+you turn on: Emoji Kitchen stickers.
 
 ## What you type
 
@@ -41,6 +42,15 @@ which receives your IP address and the request.
   <https://policies.google.com/privacy>.
 - Sticker pictures are cached on your phone for a short time to load faster.
 
+## Software updates
+
+- Once a day, iPurrboard asks GitHub (github.com, where it is published) whether a newer version
+  exists. GitHub receives your IP address and an ordinary request; nothing about you or what you type
+  is sent. GitHub's privacy statement applies. Turn it off in Settings > Software Update >
+  Automatic Checks.
+- An update is only downloaded when you tap Download and Install, and Android asks you to confirm
+  before it is installed.
+
 ## What is stored, and where
 
 - Settings, learned words, clipboard history, emoji recents and text replacements are stored only
@@ -52,7 +62,8 @@ which receives your IP address and the request.
 
 - **Microphone:** only for voice typing, asked the first time you use it.
 - **Photos:** only for Save Recent Screenshots, asked when you turn it on.
-- **Internet:** only for Emoji Kitchen stickers.
+- **Internet:** for update checks and Emoji Kitchen stickers.
+- **Install apps:** only to install an update you chose to download; Android asks you to allow it once.
 - **Vibration:** for key feedback.
 
 ## No sharing or selling

@@ -195,14 +195,21 @@ object Glyphs {
 
     /** [cutout] is the keycap colour, used for the cross when the glyph is filled (pressed). */
     fun delete(canvas: Canvas, box: RectF, paint: Paint, filled: Boolean, cutout: Int) {
+        // Filled (pressed): the cross is punched out, so the key shows through (Glass too).
+        val layer = if (filled) canvas.saveLayer(box.left - 2f, box.top - 2f, box.right + 2f, box.bottom + 2f, null) else -1
         draw(canvas, box, paint, filled) { c, pt ->
             c.drawPath(deletePath, pt)
             pt.style = Paint.Style.STROKE
-            pt.color = if (filled) cutout else paint.color
+            if (filled) pt.xfermode = PUNCH
             c.drawLine(11.5f, 9f, 17.5f, 15f, pt)
             c.drawLine(17.5f, 9f, 11.5f, 15f, pt)
+            pt.xfermode = null
         }
+        if (layer >= 0) canvas.restoreToCount(layer)
     }
+
+    /** Erases what's under it (cut-outs in filled glyphs). */
+    private val PUNCH = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.DST_OUT)
 
     fun globe(canvas: Canvas, box: RectF, paint: Paint) {
         draw(canvas, box, paint, false) { c, pt ->
@@ -215,13 +222,45 @@ object Glyphs {
         }
     }
 
-    fun emoji(canvas: Canvas, box: RectF, paint: Paint) {
+    /**
+     * A smiley. [filled] (the keyboard's emoji key, as iOS's face.smiling.fill) draws a solid face
+     * with the eyes and smile cut out in [cutout], the keycap colour.
+     */
+    fun emoji(canvas: Canvas, box: RectF, paint: Paint, filled: Boolean = false, cutout: Int = 0) {
+        // Filled: the eyes and smile are punched out of the face (the key shows through, which
+        // also works on see-through Glass keys).
+        val layer = if (filled) canvas.saveLayer(box.left - 2f, box.top - 2f, box.right + 2f, box.bottom + 2f, null) else -1
         draw(canvas, box, paint, false) { c, pt ->
-            c.drawCircle(12f, 12f, 9f, pt)
+            if (filled) {
+                pt.style = Paint.Style.FILL
+                c.drawCircle(12f, 12f, 9.6f, pt)
+                pt.xfermode = PUNCH
+            }
+            pt.style = Paint.Style.STROKE
+            if (!filled) c.drawCircle(12f, 12f, 9f, pt)
             c.drawArc(smileArc, 20f, 140f, false, pt)
             pt.style = Paint.Style.FILL
-            c.drawCircle(9.2f, 9.8f, 1.1f, pt)
-            c.drawCircle(14.8f, 9.8f, 1.1f, pt)
+            c.drawCircle(9.2f, 9.8f, 1.2f, pt)
+            c.drawCircle(14.8f, 9.8f, 1.2f, pt)
+            pt.xfermode = null
+        }
+        if (layer >= 0) canvas.restoreToCount(layer)
+    }
+
+    /** The return key's arrow (iOS's return.left): down from the top right, then left to a head. */
+    fun returnArrow(canvas: Canvas, box: RectF, paint: Paint) {
+        draw(canvas, box, paint, false) { c, pt ->
+            pt.strokeCap = Paint.Cap.ROUND
+            pt.strokeJoin = Paint.Join.ROUND
+            val p = Path().apply {
+                moveTo(19.5f, 5.5f)
+                lineTo(19.5f, 12.5f)
+                quadTo(19.5f, 15f, 17f, 15f)
+                lineTo(4.5f, 15f)
+            }
+            c.drawPath(p, pt)
+            c.drawLine(4.5f, 15f, 9f, 10.5f, pt)
+            c.drawLine(4.5f, 15f, 9f, 19.5f, pt)
         }
     }
 

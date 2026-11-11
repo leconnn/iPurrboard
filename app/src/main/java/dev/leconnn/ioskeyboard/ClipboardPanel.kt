@@ -193,7 +193,7 @@ class ClipboardPanel(private val host: View, private val callbacks: Callbacks) {
             .setAlignment(Layout.Alignment.ALIGN_NORMAL).build()
     }
 
-    /** Gboard: the tip, then "Pinned" and "Recent", each packing its cards into the shorter column. */
+    /** Gboard: the tip, then "Recent" and "Pinned", each packing its cards into the shorter column. */
     private fun layoutGrid() {
         gridDirty = false
         gridWidth = area.width()
@@ -229,8 +229,8 @@ class ClipboardPanel(private val host: View, private val callbacks: Callbacks) {
             }
             y = maxOf(bottoms[0], bottoms[1]) + gap / 2
         }
-        section("Pinned", items.indices.filter { items[it].pinned })
         section("Recent", items.indices.filter { !items[it].pinned })
+        section("Pinned", items.indices.filter { items[it].pinned })
         gridH = y + gap
     }
 

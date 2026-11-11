@@ -78,20 +78,53 @@ class Predictor(
         // Completions that usually follow the previous word come first ("I am go" -> "going").
         val lower = partial.lowercase()
         val fromContext = likely.filter { it.startsWith(lower) && it != lower }.mapNotNull { dict.displayForm(it) }
-        val completions = (fromContext + dict.completions(partial, 8)).distinctBy { it.lowercase() }.filter(::allowed)
-            .take(4).map { Corrector.matchCase(partial, it) }
-            .filter { !it.equals(partial, ignoreCase = true) && it != correction }
+        val completions = (fromContext + dict.completions(partial, 12)).distinctBy { it.lowercase() }.filter(::allowed)
         if (correction != null && correction != partial) {
+            val next = ranked(partial, completions, touches, context, exclude = setOf(correction.lowercase()), n = 1)
             return Slots(Slot(partial, Kind.LITERAL), Slot(correction, Kind.CORRECTION),
-                completions.firstOrNull()?.let { Slot(it, Kind.COMPLETION) })
+                next.firstOrNull()?.let { Slot(it, Kind.COMPLETION) })
         }
-        // No autocorrection: the typed word stays (quoted on the left), completions fill the rest.
-        val alternatives = completions.ifEmpty {
-            corrector.candidates(partial, Corrector.MAX_COST, 2, touches, context).map { Corrector.matchCase(partial, it.word) }
-        }
+        // No autocorrection: the typed word stays (quoted on the left); the two likeliest
+        // completions or corrections fill the rest.
+        val alternatives = ranked(partial, completions, touches, context, exclude = emptySet(), n = 2)
         return Slots(Slot(partial, Kind.LITERAL), alternatives.getOrNull(0)?.let { Slot(it, Kind.COMPLETION) },
             alternatives.getOrNull(1)?.let { Slot(it, Kind.COMPLETION) })
     }
 
+    /**
+     * Completions and corrections of [partial] ranked together, as Gboard does: each scored by how
+     * common the word is minus how far it is from what was typed. A completion costs a little per
+     * letter still to type (capped, so long words stay reachable); a correction costs its edit
+     * distance. So "helo" offers "hello" before the rare "heloise", and "worl" still offers "world"
+     * before "work". Words often typed after the previous word get the context bonus.
+     */
+    private fun ranked(
+        partial: String, completions: List<String>, touches: List<Corrector.Touch?>?, context: Set<String>,
+        exclude: Set<String>, n: Int,
+    ): List<String> {
+        val lower = partial.lowercase()
+        val pool = HashMap<String, Pair<String, Double>>()
+        fun offer(word: String, score: Double) {
+            val k = word.lowercase()
+            if (k == lower || k in exclude || !allowed(word)) return
+            if ((pool[k]?.second ?: Double.NEGATIVE_INFINITY) < score) pool[k] = word to score
+        }
+        for (w in completions) {
+            val i = dict.indexOf(w)
+            val freq = if (i >= 0) dict.freq[i] else 0
+            val missing = (w.length - partial.length).coerceAtLeast(1)
+            val bonus = if (w.lowercase() in context) Corrector.CONTEXT_BONUS else 0.0
+            offer(w, corrector.score(freq, minOf(missing * COMPLETION_COST, MAX_COMPLETION_COST)) + bonus)
+        }
+        for (c in corrector.candidates(partial, Corrector.MAX_COST, 6, touches, context)) offer(c.word, c.score)
+        return pool.values.sortedByDescending { it.second }.take(n).map { Corrector.matchCase(partial, it.first) }
+    }
+
     private fun capitalise(w: String) = w.replaceFirstChar { it.uppercaseChar() }
+
+    private companion object {
+        /** Cost per letter a completion still needs, and its cap (in the corrector's cost units). */
+        const val COMPLETION_COST = 0.25f
+        const val MAX_COMPLETION_COST = 0.75f
+    }
 }

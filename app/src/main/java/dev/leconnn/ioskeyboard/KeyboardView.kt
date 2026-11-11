@@ -712,10 +712,18 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
      */
     private fun pressLevel(key: Key, pressed: Boolean): Float {
         val glassChar = theme.glass && key.kind == KeyKind.CHAR
-        if (pressed) return if (glassChar) easeOut(progress(pressStart[key] ?: 0L, GLASS_PRESS_MS)) else 1f
+        if (pressed) {
+            if (!glassChar) return 1f
+            val p = progress(pressStart[key] ?: 0L, GLASS_PRESS_MS)
+            // The key drives its own swell: without this it only moved when something else
+            // redrew (typing a letter refreshes the bar; a digit doesn't, so digits jumped).
+            if (p < 1f) frameAnimating = true
+            return easeOut(p)
+        }
         val at = releaseStart[key] ?: return 0f
         val p = progress(at, if (glassChar) GLASS_RELEASE_MS else KEY_RELEASE_MS)
         if (p >= 1f) { releaseStart.remove(key); return 0f }
+        frameAnimating = true
         return 1f - easeOut(p)
     }
 
@@ -825,6 +833,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
 
         val host = popupHost
         if (host != null) {
+            host.ensureStanding()
             // Redraw the overlay only while it shows something, or to clear what it showed.
             val visible = popupsVisible()
             if (visible || popupsShown) host.invalidate()
@@ -902,6 +911,18 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
      */
     fun headroomFor(key: Key): Float =
         ((maxOf(POPUP_RISE_PT, 6f + 50f * previewScale) + POPUP_SHADOW_PT) * scale - (keysTop + key.rect.top * scale)).coerceAtLeast(0f)
+
+    /**
+     * Room the keys on show always need above the keyboard for their bubbles, in pixels: with the
+     * number row its bubbles rise over the app, so the popup window keeps this much ready instead
+     * of growing on touch (which takes a few frames and made the bubble grow in). 0 without.
+     */
+    fun standingHeadroomPx(): Float {
+        if (panel != Panel.KEYS || !characterPreview) return 0f
+        var need = 0f
+        for (k in spec.keys(plane)) if (k.kind == KeyKind.CHAR) need = maxOf(need, headroomFor(k))
+        return need
+    }
 
     /** Room the popups showing now need above the keyboard, in pixels (0: none reach over the app). */
     fun popupHeadroomNeededPx(): Float {
@@ -992,7 +1013,8 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         // One transition: the buttons fold into the chevron while the words fade in, and back.
         val shown = toolbarShown()
         if (shown < 1f && hasBarContent) {
-            val count = canvas.saveLayerAlpha(slotsLeft, keyboardTop, width.toFloat(), keysTop, ((1f - shown) * 255).toInt())
+            // From the slots' margin, so the left slot's press highlight isn't clipped.
+            val count = canvas.saveLayerAlpha(minOf(slotsLeft, slotsMargin), keyboardTop, width.toFloat(), keysTop, ((1f - shown) * 255).toInt())
             canvas.translate(shown * 16f * scale, 0f)
             drawBarContent(canvas)
             canvas.restoreToCount(count)
@@ -1641,7 +1663,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private var spaceName: String? = null
     private var spaceNameAt = 0L
 
-    /** Shows [name] on the space bar for a moment, then fades back to "space" (iOS). */
+    /** Shows [name] on the space bar for a moment, then fades out to the blank bar (iOS 26). */
     fun showKeyboardName(name: String) {
         spaceName = name
         spaceNameAt = SystemClock.uptimeMillis()
@@ -1653,7 +1675,6 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         val t = SystemClock.uptimeMillis() - spaceNameAt
         if (name == null || t >= SPACE_NAME_MS + SPACE_NAME_FADE_MS) {
             spaceName = null
-            drawLabel(canvas, "space", r, 16f, fg)
             return
         }
         if (t < SPACE_NAME_MS || !animationsOn) {
@@ -1665,7 +1686,6 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         // Cross-fade back to "space".
         val p = easeOut(((t - SPACE_NAME_MS) / SPACE_NAME_FADE_MS.toFloat()).coerceIn(0f, 1f))
         drawLabel(canvas, name, r, 16f, withAlpha(fg, 1f - p))
-        drawLabel(canvas, "space", r, 16f, withAlpha(fg, p))
         frameAnimating = true
     }
 
@@ -1679,12 +1699,14 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             KeyKind.SHIFT -> drawShiftGlyph(canvas, glyphBox, fg)
             KeyKind.DELETE -> Glyphs.delete(canvas, glyphBox, glyphPaint, pressed, keyPaint.color)
             KeyKind.GLOBE -> Glyphs.globe(canvas, glyphBox, glyphPaint)
-            KeyKind.EMOJI -> Glyphs.emoji(canvas, glyphBox, glyphPaint)
+            KeyKind.EMOJI -> Glyphs.emoji(canvas, glyphBox, glyphPaint, filled = true, cutout = keyPaint.color)
             KeyKind.SPACE -> drawSpaceLabel(canvas, r, fg)
-            KeyKind.RETURN -> drawLabel(canvas, returnLabel, r, 16f, fg)
+            // iOS 26: a plain return key shows the return arrow; action keys keep their word.
+            KeyKind.RETURN -> if (returnLabel == "return") Glyphs.returnArrow(canvas, glyphBox, glyphPaint)
+                else drawLabel(canvas, returnLabel, r, 16f, fg)
             KeyKind.CHAR -> {
                 drawLabel(canvas, display(key), r, if (key.isLetter) 22.5f else 21f, fg)
-                key.hint?.let { drawHint(canvas, it, r, alpha) }
+                key.hint?.takeIf { key.hintShown }?.let { drawHint(canvas, it, r, alpha) }
             }
             else -> drawLabel(canvas, key.text, r, 16f, fg)
         }
@@ -1852,26 +1874,44 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             set(lerp(from.left, final.left, e), lerp(from.top, final.top, e), lerp(from.right, final.right, e), lerp(from.bottom, final.bottom, e))
         }
         drawBalloon(canvas, balloonPath(r, head))
-        // The previewed letter gives way in the first half.
-        if (fromPreview && e < 1f) {
-            val out = (1f - e / 0.5f).coerceIn(0f, 1f)
-            if (out > 0f) {
-                canvas.save()
-                val k = 0.7f + 0.3f * out
-                canvas.scale(k, k, head.centerX(), head.centerY())
-                drawLabel(canvas, display(key), head, 34f * previewScale, withAlpha(theme.text, out))
-                canvas.restore()
-            }
-        }
         val cw = final.width() / v.items.size
         val items = ordered(v)
+        val slot = head.width() / items.size
+        // When the strip opens on the previewed character itself, that character travels into
+        // its slot (shrinking to the strip's size and taking the highlight's colour), so there's
+        // only ever one of it. Otherwise (a letter opening on its digit) the preview fades away.
+        val travels = fromPreview && items.getOrNull(t.variantBase) == display(key)
+        if (fromPreview && p < 1f) {
+            if (travels) {
+                val cx = lerp(head.centerX(), head.left + (t.variantBase + 0.5f) * slot, e)
+                val cell = variantCell.apply { set(cx - cw / 2, head.top, cx + cw / 2, head.bottom) }
+                val selected = t.variantSelected == t.variantBase
+                if (selected) {
+                    keyPaint.color = withAlpha(theme.accent, e)
+                    canvas.drawRoundRect(cell.left + 2f * scale, cell.top + 4f * scale, cell.right - 2f * scale, cell.bottom - 4f * scale,
+                        5f * scale, 5f * scale, keyPaint)
+                }
+                val color = if (selected) mix(theme.text, theme.accentText, e) else theme.text
+                drawLabel(canvas, display(key), cell, lerp(34f * previewScale, 24f, e), color)
+            } else {
+                val out = (1f - e / 0.5f).coerceIn(0f, 1f)
+                if (out > 0f) {
+                    canvas.save()
+                    val k = 0.7f + 0.3f * out
+                    canvas.scale(k, k, head.centerX(), head.centerY())
+                    drawLabel(canvas, display(key), head, 34f * previewScale, withAlpha(theme.text, out))
+                    canvas.restore()
+                }
+            }
+        }
         for ((i, s) in items.withIndex()) {
+            // The travelling preview stands in for its own slot until the strip has opened.
+            if (travels && p < 1f && i == t.variantBase) continue
             // Each accent rides its own slot of the growing strip (so they spread with it and never
             // overlap) and fades in a beat after its neighbour nearer the finger.
             val lag = (kotlin.math.abs(i - t.variantBase) * VARIANT_STAGGER).coerceAtMost(0.3f)
             val q = if (p >= 1f) 1f else STRONG_EASE_OUT.getInterpolation(((p - lag) / (1f - lag)).coerceIn(0f, 1f))
             if (q <= 0f) continue
-            val slot = head.width() / items.size
             val cx = head.left + (i + 0.5f) * slot
             val cell = variantCell.apply { set(cx - cw / 2, head.top, cx + cw / 2, head.bottom) }
             var color = withAlpha(theme.text, q)

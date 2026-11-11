@@ -41,12 +41,14 @@ class Key(
     val rect: RectF,
     /** Keycap label when it differs from the output (iOS shows curly quotes but types straight ones). */
     val label: String = text,
-    /** Small symbol in the keycap corner, typed by a long press (Gboard layout). */
+    /** Symbol typed by a long press, shown small in the keycap corner when [hintShown]. */
     val hint: String? = null,
+    /** False when Symbol Hints is off: the long press still types [hint], it just isn't drawn. */
+    val hintShown: Boolean = true,
 ) {
     /** The same key with its frame moved/scaled vertically: y' = (y + [dy]) * [sy]. */
     fun moved(dy: Float, sy: Float, row: Int = this.row) =
-        Key(kind, text, row, RectF(rect.left, (rect.top + dy) * sy, rect.right, (rect.bottom + dy) * sy), label, hint)
+        Key(kind, text, row, RectF(rect.left, (rect.top + dy) * sy, rect.right, (rect.bottom + dy) * sy), label, hint, hintShown)
 
     val isLetter get() = kind == KeyKind.CHAR && text.length == 1 && text[0].isLetter()
     /** Grey "function" keycap (shift, delete, 123, globe, return). */
@@ -151,7 +153,13 @@ class KeyboardSpec(
     /** Applies [hints] and [emojiKey] to a page of keys. */
     private fun adjust(keys: List<Key>): List<Key> {
         var out = when {
-            !hints -> keys.map { if (it.hint == null) it else Key(it.kind, it.text, it.row, it.rect, it.label) }
+            // Without hints shown, only the top row's digits stay (there's no number row to type
+            // them from), typed by a long press as on Gboard.
+            !hints -> keys.map { k ->
+                val digit = if (!numberRow && k.isLetter) (k.hint ?: GboardLayouts.hintFor(k.text[0], numberRow))
+                    ?.takeIf { it.length == 1 && it[0].isDigit() } else null
+                if (k.hint == null && digit == null) k else Key(k.kind, k.text, k.row, k.rect, k.label, digit, hintShown = false)
+            }
             // The iOS layout has no hints of its own; Symbol Hints gives its letters Gboard's.
             style == KeyStyle.IOS -> keys.map { k ->
                 if (!k.isLetter || k.hint != null) k
@@ -196,7 +204,7 @@ class KeyboardSpec(
             val gap = (bottomTop - top - 3 * h) / 3
             val y = top + key.row * (h + gap)
             Key(key.kind, key.text, key.row, RectF(key.rect.left, y * heightScale, key.rect.right, (y + h) * heightScale),
-                key.label, key.hint)
+                key.label, key.hint, key.hintShown)
         }
     }
 
@@ -289,7 +297,17 @@ object Accents {
         "-" to Variants(listOf("–", "—", "•", "-"), false),
         "." to Variants(listOf("…", "."), false),
         "/" to Variants(listOf("\\", "/"), false),
-        "0" to Variants(listOf("°", "0"), true),
+        // Digits: superscripts and fractions, as on Gboard.
+        "0" to Variants(listOf("0", "⁰", "°", "ⁿ", "∅"), true),
+        "1" to Variants(listOf("1", "¹", "½", "⅓", "¼", "⅛"), false),
+        "2" to Variants(listOf("2", "²", "⅔"), false),
+        "3" to Variants(listOf("3", "³", "¾", "⅜"), false),
+        "4" to Variants(listOf("4", "⁴"), false),
+        "5" to Variants(listOf("5", "⁵", "⅝"), false),
+        "6" to Variants(listOf("6", "⁶"), true),
+        "7" to Variants(listOf("7", "⁷", "⅞"), true),
+        "8" to Variants(listOf("8", "⁸"), true),
+        "9" to Variants(listOf("9", "⁹"), true),
         "?" to Variants(listOf("¿", "?"), false),
         "=" to Variants(listOf("=", "≠", "≈"), true),
         "$" to Variants(listOf("$", "¢"), false),

@@ -68,12 +68,12 @@ class ClipHistory private constructor(context: Context) : SQLiteOpenHelper(
         }
     }
 
-    /** Pinned first, then newest first; expired unpinned clips are dropped on the way. */
+    /** Recent (unpinned) first, then pinned, each newest first; expired unpinned clips are dropped on the way. */
     @Synchronized
     fun items(now: Long = System.currentTimeMillis()): List<Clip> {
         awaitLoad()
         purge(now)
-        return clips.sortedWith(compareByDescending<Clip> { it.pinned }.thenByDescending { it.at })
+        return clips.sortedWith(compareBy<Clip> { it.pinned }.thenByDescending { it.at })
     }
 
     /** The most recent clip (pinned or not), if any. */

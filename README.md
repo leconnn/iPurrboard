@@ -20,6 +20,9 @@ Get the latest APK from [Releases](https://github.com/leconnn/iPurrboard/release
    selecting it, and picking its look, layout and a few extras (all changeable later in Settings).
 3. Use **Try It** at the top of Settings to test it right away.
 
+After that, iPurrboard updates itself: when a new version is out, Settings shows **Software Update
+Available** (and the keyboard mentions it once). Tap **Download and Install** and confirm.
+
 Requires Android 8.0 or newer. The Glass look's background blur needs Android 12 or newer.
 
 ## Features
@@ -57,8 +60,9 @@ Most extras are off at first, as on the iPhone; turn them on in Settings.
 
 What you type never leaves your phone. iPurrboard has no accounts, analytics, ads or crash
 reporting. Learned words, clipboard history and settings are stored only on your device and are
-not backed up. It learns nothing in password fields or incognito fields. The only feature that goes
-online is Emoji Kitchen stickers, and only if you turn it on.
+not backed up. It learns nothing in password fields or incognito fields. It goes online only to
+check GitHub for a new version once a day (you can turn that off) and for Emoji Kitchen stickers, if
+you turn them on.
 
 Read the full [privacy policy](PRIVACY.md) (also in the app: Settings > Privacy Policy).
 

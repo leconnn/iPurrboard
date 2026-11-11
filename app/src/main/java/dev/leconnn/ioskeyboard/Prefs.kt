@@ -119,6 +119,14 @@ class Prefs private constructor(val raw: SharedPreferences) {
         get() = raw.getInt(KEY_GLASS_TINT, 50).coerceIn(0, 100)
         set(v) = raw.edit().putInt(KEY_GLASS_TINT, v.coerceIn(0, 100)).apply()
 
+    /** Settings › Software Update › Automatic Checks: look for a newer version once a day. */
+    var autoUpdateCheck by bool("autoUpdateCheck", true)
+
+    /** The version whose "update available" chip was already shown in the bar (it shows once). */
+    var updateNoticeSeen: String
+        get() = raw.getString("updateNoticeSeen", "").orEmpty()
+        set(v) = raw.edit().putString("updateNoticeSeen", v).apply()
+
     /** The welcome (first-run setup) was finished or skipped; see WelcomeActivity. */
     var onboarded by bool("onboarded", false)
 
