@@ -50,6 +50,34 @@ class CorrectorTest {
         assertTrue(c.candidates("shiy").none { it.word.equals("shit", ignoreCase = true) })
     }
 
+    /** The words in the bar after the quoted typed word. */
+    private fun offered(typed: String, autocorrect: Boolean, d: Dictionary = dict) =
+        Predictor(d, Corrector(d)).predict(typed, "so", sentenceStart = false, autocorrect = autocorrect)
+            .let { listOfNotNull(it.centre, it.right).map { s -> s.text } }
+
+    @Test fun contractionOfAWordIsOffered() {
+        // "its" is a word, so it stays; "it's" is still offered first, like Gboard.
+        assertEquals(listOf("it's", "it"), offered("its", autocorrect = true))
+        assertEquals("It's", offered("Its", autocorrect = false).first())
+    }
+
+    @Test fun contractionComesFirstWithoutAutocorrection() {
+        assertEquals("when's", offered("whens", autocorrect = false).first())
+        assertEquals("that's", offered("thats", autocorrect = false).first())
+    }
+
+    @Test fun contractionBesideAnotherCorrection() {
+        // Autocorrection already makes the contraction: the next suggestion fills the right.
+        assertEquals(listOf("when's", "when"), offered("whens", autocorrect = true))
+    }
+
+    @Test fun contractionOfAWordInAnotherLanguage() {
+        // "im" is Filipino, so it isn't corrected with Filipino on, but "I'm" is still offered.
+        val f = listOf("src/main/assets/dict/tl.tsv", "app/src/main/assets/dict/tl.tsv").map(::File).first { it.exists() }
+        val both = Dictionary.merge(listOf(dict to 1.0, Dictionary.parse(f.readLines(Charsets.UTF_8).asSequence()) to 0.5))
+        assertEquals("I'm", offered("im", autocorrect = true, d = both).first())
+    }
+
     @Test fun completions() {
         val c = dict.completions("hel", 4)
         assertTrue(c.toString(), "hello" in c && "help" in c)

@@ -56,6 +56,9 @@ class Prefs private constructor(val raw: SharedPreferences) {
     /** Save Recent Screenshots: screenshots join the clipboard history (needs photo access). */
     var clipboardScreenshots by bool("clipboardScreenshots", false)
 
+    /** Clipboard › Show First: pinned clips above recent ones (off: recent first). */
+    var clipboardPinnedFirst by bool("clipboardPinnedFirst", false)
+
     /** Settings > Keyboards: the enabled keyboard languages, in the user's order (never empty). */
     var keyboards: List<dev.leconnn.ioskeyboard.text.Language>
         get() = raw.getString(KEY_KEYBOARDS, null).orEmpty().split(',')

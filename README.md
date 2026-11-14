@@ -47,8 +47,9 @@ Requires Android 8.0 or newer. The Glass look's background blur needs Android 12
 
 **Extras**
 - **Paste suggestion:** what you just copied appears above the keys ("paste from Threads"); tap to
-  paste. Recent screenshots too, if you allow it.
-- **Clipboard history** with pinning, as a list or a grid of cards.
+  paste. Copied images and recent screenshots too (screenshots if you allow it).
+- **Clipboard history** with pinning, as a list or a grid of cards. Drag pinned items into your
+  own order, and choose whether pinned or recent items come first.
 - **Emoji panel** with search, skin tones and emoji suggestions while you type.
 - **Emoji Kitchen** stickers (optional; the pictures load from Google's servers).
 - **Toolbar** with emoji, clipboard, text editing (arrows, select, copy, paste) and voice typing.

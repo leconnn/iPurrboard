@@ -10,13 +10,21 @@ import java.util.concurrent.Executors
  * Recently copied text for the clipboard panel and the copied-item chip (Gboard's model):
  * unpinned items are kept for [retentionMs] (Settings > Keep History For, default 1 hour), pinned
  * ones until unpinned. Mirrored in memory; SQLite (device-protected storage) keeps them across
- * restarts, written on a background thread. Text only.
+ * restarts, written on a background thread. Copied images and screenshots are kept as image clips
+ * (copied images as a private copy, see [ClipImages]); pinned clips keep the order the user dragged
+ * them into.
  */
 class ClipHistory private constructor(context: Context) : SQLiteOpenHelper(
-    context.applicationContext.createDeviceProtectedStorageContext(), "clips.db", null, 2,
+    context.applicationContext.createDeviceProtectedStorageContext(), "clips.db", null, 3,
 ) {
-    /** A copied text, or a screenshot ([image] is its content URI; [text] is then empty). */
-    data class Clip(val id: Long, val text: String, val at: Long, val pinned: Boolean, val image: String? = null)
+    /**
+     * A copied text, or an image ([image]: a screenshot's content URI, or a copied image's private
+     * file; [text] is then empty). [pos] orders pinned clips (lowest first).
+     */
+    data class Clip(val id: Long, val text: String, val at: Long, val pinned: Boolean, val image: String? = null, val pos: Long = 0) {
+        /** A copied image (kept as the keyboard's own file), not a screenshot from the photo library. */
+        val copiedImage get() = image?.startsWith("file:") == true
+    }
 
     private val writer = Executors.newSingleThreadExecutor()
     private val clips = ArrayList<Clip>()
@@ -42,7 +50,7 @@ class ClipHistory private constructor(context: Context) : SQLiteOpenHelper(
     }
 
     override fun onCreate(db: SQLiteDatabase) {
-        db.execSQL("CREATE TABLE clips (id INTEGER PRIMARY KEY, text TEXT NOT NULL, at INTEGER NOT NULL, pinned INTEGER NOT NULL DEFAULT 0, image TEXT)")
+        db.execSQL("CREATE TABLE clips (id INTEGER PRIMARY KEY, text TEXT NOT NULL, at INTEGER NOT NULL, pinned INTEGER NOT NULL DEFAULT 0, image TEXT, pos INTEGER NOT NULL DEFAULT 0)")
         db.execSQL("CREATE TABLE dismissed (uri TEXT PRIMARY KEY)")
     }
 
@@ -52,13 +60,15 @@ class ClipHistory private constructor(context: Context) : SQLiteOpenHelper(
             db.execSQL("ALTER TABLE clips ADD COLUMN image TEXT")
             db.execSQL("CREATE TABLE IF NOT EXISTS dismissed (uri TEXT PRIMARY KEY)")
         }
+        // Version 3: pinned clips in the order the user put them.
+        if (oldVersion < 3) db.execSQL("ALTER TABLE clips ADD COLUMN pos INTEGER NOT NULL DEFAULT 0")
     }
 
     private fun load() {
-        readableDatabase.rawQuery("SELECT id, text, at, pinned, image FROM clips ORDER BY at DESC", null).use { c ->
+        readableDatabase.rawQuery("SELECT id, text, at, pinned, image, pos FROM clips ORDER BY at DESC", null).use { c ->
             synchronized(this) {
                 while (c.moveToNext()) {
-                    clips.add(Clip(c.getLong(0), c.getString(1), c.getLong(2), c.getInt(3) != 0, c.getString(4)))
+                    clips.add(Clip(c.getLong(0), c.getString(1), c.getLong(2), c.getInt(3) != 0, c.getString(4), c.getLong(5)))
                 }
                 nextId = (clips.maxOfOrNull { it.id } ?: 0L) + 1
             }
@@ -68,12 +78,17 @@ class ClipHistory private constructor(context: Context) : SQLiteOpenHelper(
         }
     }
 
-    /** Recent (unpinned) first, then pinned, each newest first; expired unpinned clips are dropped on the way. */
+    /**
+     * Recent (unpinned, newest first) and pinned (in the user's order), recent first unless
+     * [pinnedFirst]; expired unpinned clips are dropped on the way.
+     */
     @Synchronized
-    fun items(now: Long = System.currentTimeMillis()): List<Clip> {
+    fun items(pinnedFirst: Boolean = false, now: Long = System.currentTimeMillis()): List<Clip> {
         awaitLoad()
         purge(now)
-        return clips.sortedWith(compareBy<Clip> { it.pinned }.thenByDescending { it.at })
+        val recent = clips.filter { !it.pinned }.sortedByDescending { it.at }
+        val pinned = clips.filter { it.pinned }.sortedWith(compareBy<Clip> { it.pos }.thenByDescending { it.at })
+        return if (pinnedFirst) pinned + recent else recent + pinned
     }
 
     /** The most recent clip (pinned or not), if any. */
@@ -90,47 +105,74 @@ class ClipHistory private constructor(context: Context) : SQLiteOpenHelper(
         if (text.isBlank()) return null
         val clip: Clip
         val replaced: Clip?
+        val overflow: List<Clip>
         synchronized(this) {
-            replaced = clips.firstOrNull { it.text == text }
+            replaced = clips.firstOrNull { it.text == text && it.image == null }
             if (replaced != null) clips.remove(replaced)
-            clip = Clip(nextId++, text, now, replaced?.pinned ?: false)
+            clip = Clip(nextId++, text, now, replaced?.pinned ?: false, pos = replaced?.pos ?: 0)
             clips.add(clip)
-            while (clips.count { !it.pinned } > MAX_UNPINNED) clips.remove(clips.filter { !it.pinned }.minBy { it.at })
+            overflow = trim()
         }
         writer.execute {
             val db = writableDatabase
             replaced?.let { db.delete("clips", "id = ?", arrayOf(it.id.toString())) }
+            for (o in overflow) db.delete("clips", "id = ?", arrayOf(o.id.toString()))
             db.insert("clips", null, ContentValues().apply {
-                put("id", clip.id); put("text", clip.text); put("at", clip.at); put("pinned", if (clip.pinned) 1 else 0)
+                put("id", clip.id); put("text", clip.text); put("at", clip.at); put("pinned", if (clip.pinned) 1 else 0); put("pos", clip.pos)
             })
         }
+        ClipImages.discard(overflow)
         return clip
     }
 
     /**
-     * Records a screenshot taken at [at] (its content URI), unless it is already here, was
-     * deleted by the user, or is older than the history keeps. Returns true if it was added.
+     * Records an image taken or copied at [at]: a screenshot's content URI, or a copied image's
+     * private file. Skipped if it is already here, was deleted by the user, or is older than the
+     * history keeps; with [renew] (it was just copied again) it comes back and moves to the top,
+     * like text copied again. Returns true if the list changed.
      */
-    fun addImage(uri: String, at: Long, now: Long = System.currentTimeMillis()): Boolean {
+    fun addImage(uri: String, at: Long, now: Long = System.currentTimeMillis(), renew: Boolean = false): Boolean {
         awaitLoad()
         val clip: Clip
+        val replaced: Clip?
+        val overflow: List<Clip>
         synchronized(this) {
-            if (uri in dismissed || at < now - retentionMs || clips.any { it.image == uri }) return false
-            clip = Clip(nextId++, "", at, false, uri)
+            if (renew) dismissed.remove(uri)
+            replaced = clips.firstOrNull { it.image == uri }
+            if (uri in dismissed || at < now - retentionMs || (replaced != null && !renew)) return false
+            if (replaced != null) clips.remove(replaced)
+            clip = Clip(nextId++, "", at, replaced?.pinned ?: false, uri, replaced?.pos ?: 0)
             clips.add(clip)
-            while (clips.count { !it.pinned } > MAX_UNPINNED) clips.remove(clips.filter { !it.pinned }.minBy { it.at })
+            overflow = trim()
         }
         writer.execute {
-            writableDatabase.insert("clips", null, ContentValues().apply {
-                put("id", clip.id); put("text", ""); put("at", clip.at); put("pinned", 0); put("image", uri)
+            val db = writableDatabase
+            if (renew) db.delete("dismissed", "uri = ?", arrayOf(uri))
+            replaced?.let { db.delete("clips", "id = ?", arrayOf(it.id.toString())) }
+            for (o in overflow) db.delete("clips", "id = ?", arrayOf(o.id.toString()))
+            db.insert("clips", null, ContentValues().apply {
+                put("id", clip.id); put("text", ""); put("at", clip.at); put("pinned", if (clip.pinned) 1 else 0)
+                put("image", uri); put("pos", clip.pos)
             })
         }
+        ClipImages.discard(overflow)
         return true
+    }
+
+    /** Drops the oldest unpinned clips past [MAX_UNPINNED] (call holding the lock); returns them. */
+    private fun trim(): List<Clip> {
+        val out = ArrayList<Clip>()
+        while (clips.count { !it.pinned } > MAX_UNPINNED) {
+            val old = clips.filter { !it.pinned }.minBy { it.at }
+            clips.remove(old)
+            out += old
+        }
+        return out
     }
 
     /** Remembers removed screenshots so the next scan of the photo library skips them. */
     private fun dismiss(removed: List<Clip>) {
-        val uris = removed.mapNotNull { it.image }
+        val uris = removed.filter { !it.copiedImage }.mapNotNull { it.image }
         if (uris.isEmpty()) return
         synchronized(this) { dismissed.addAll(uris) }
         writer.execute {
@@ -140,20 +182,45 @@ class ClipHistory private constructor(context: Context) : SQLiteOpenHelper(
         }
     }
 
+    /** Pins (to the top of the pinned clips) or unpins a clip. */
     fun setPinned(id: Long, pinned: Boolean) {
         awaitLoad()
+        val pos: Long
         synchronized(this) {
             val i = clips.indexOfFirst { it.id == id }
             if (i < 0) return
-            clips[i] = clips[i].copy(pinned = pinned)
+            pos = if (pinned) (clips.filter { it.pinned }.minOfOrNull { it.pos } ?: 1L) - 1 else 0L
+            clips[i] = clips[i].copy(pinned = pinned, pos = pos)
         }
-        writer.execute { writableDatabase.execSQL("UPDATE clips SET pinned = ? WHERE id = ?", arrayOf(if (pinned) 1 else 0, id)) }
+        writer.execute { writableDatabase.execSQL("UPDATE clips SET pinned = ?, pos = ? WHERE id = ?", arrayOf(if (pinned) 1 else 0, pos, id)) }
+    }
+
+    /** Puts the pinned clips in the order of [ids] (dragged in the clipboard). */
+    fun reorderPinned(ids: List<Long>) {
+        awaitLoad()
+        synchronized(this) {
+            for ((n, id) in ids.withIndex()) {
+                val i = clips.indexOfFirst { it.id == id && it.pinned }
+                if (i >= 0) clips[i] = clips[i].copy(pos = n.toLong())
+            }
+        }
+        writer.execute {
+            val db = writableDatabase
+            db.beginTransaction()
+            try {
+                for ((n, id) in ids.withIndex()) db.execSQL("UPDATE clips SET pos = ? WHERE id = ? AND pinned = 1", arrayOf(n, id))
+                db.setTransactionSuccessful()
+            } finally {
+                db.endTransaction()
+            }
+        }
     }
 
     fun delete(id: Long) {
         awaitLoad()
         val removed = synchronized(this) { clips.filter { it.id == id }.also { clips.removeAll(it.toSet()) } }
         dismiss(removed)
+        ClipImages.discard(removed)
         writer.execute { writableDatabase.delete("clips", "id = ?", arrayOf(id.toString())) }
     }
 
@@ -162,13 +229,16 @@ class ClipHistory private constructor(context: Context) : SQLiteOpenHelper(
         awaitLoad()
         val removed = synchronized(this) { clips.filter { !it.pinned }.also { clips.removeAll(it.toSet()) } }
         dismiss(removed)
+        ClipImages.discard(removed)
         writer.execute { writableDatabase.delete("clips", "pinned = 0", null) }
     }
 
     private fun purge(now: Long) {
         val cutoff = now - retentionMs
-        if (clips.none { !it.pinned && it.at < cutoff }) return
-        clips.removeAll { !it.pinned && it.at < cutoff }
+        val expired = clips.filter { !it.pinned && it.at < cutoff }
+        if (expired.isEmpty()) return
+        clips.removeAll(expired.toSet())
+        ClipImages.discard(expired)
         writer.execute { writableDatabase.delete("clips", "pinned = 0 AND at < ?", arrayOf(cutoff.toString())) }
     }
 

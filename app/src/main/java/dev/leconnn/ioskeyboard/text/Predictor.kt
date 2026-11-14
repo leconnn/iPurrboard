@@ -79,14 +79,18 @@ class Predictor(
         val lower = partial.lowercase()
         val fromContext = likely.filter { it.startsWith(lower) && it != lower }.mapNotNull { dict.displayForm(it) }
         val completions = (fromContext + dict.completions(partial, 12)).distinctBy { it.lowercase() }.filter(::allowed)
+        // The word with its apostrophe ("its" -> "it's", "whens" -> "when's") is always offered,
+        // as Gboard does, even when the typed word is a word too.
+        val contraction = corrector.contraction(partial)?.takeIf(::allowed)
         if (correction != null && correction != partial) {
-            val next = ranked(partial, completions, touches, context, exclude = setOf(correction.lowercase()), n = 1)
-            return Slots(Slot(partial, Kind.LITERAL), Slot(correction, Kind.CORRECTION),
-                next.firstOrNull()?.let { Slot(it, Kind.COMPLETION) })
+            val right = contraction?.takeIf { !it.equals(correction, ignoreCase = true) }
+                ?: ranked(partial, completions, touches, context, exclude = setOf(correction.lowercase()), n = 1).firstOrNull()
+            return Slots(Slot(partial, Kind.LITERAL), Slot(correction, Kind.CORRECTION), right?.let { Slot(it, Kind.COMPLETION) })
         }
         // No autocorrection: the typed word stays (quoted on the left); the two likeliest
-        // completions or corrections fill the rest.
-        val alternatives = ranked(partial, completions, touches, context, exclude = emptySet(), n = 2)
+        // completions or corrections fill the rest, the contraction first.
+        val alternatives = listOfNotNull(contraction) +
+            ranked(partial, completions, touches, context, exclude = setOfNotNull(contraction?.lowercase()), n = if (contraction != null) 1 else 2)
         return Slots(Slot(partial, Kind.LITERAL), alternatives.getOrNull(0)?.let { Slot(it, Kind.COMPLETION) },
             alternatives.getOrNull(1)?.let { Slot(it, Kind.COMPLETION) })
     }

@@ -17,7 +17,8 @@ import dev.leconnn.ioskeyboard.text.UserWords
  * Sets: `worst` (long, short, emoji, right-to-left, multi-line, accented values mixed across
  * items), `huge` (the most the app keeps: 50 clips, 300 learned words, 120 replacements), `one`
  * (one of each), `empty` (nothing). `copy` + `--es text "…"` puts text on the clipboard (copied
- * chip); `copy-long` copies a 20,000-character document. Seeding replaces what's there, so back
+ * chip); `copy-long` copies a 20,000-character document; `copy-image` copies a picture as apps do
+ * (a content URI with an image type). Seeding replaces what's there, so back
  * the data up first (tests do).
  */
 class DebugDataReceiver : BroadcastReceiver() {
@@ -56,6 +57,7 @@ class DebugDataReceiver : BroadcastReceiver() {
             "empty" -> reset(clips, words, prefs)
             "copy" -> copy(context, intent.getStringExtra("text") ?: return)
             "copy-long" -> copy(context, LONG_DOCUMENT)
+            "copy-image" -> copyImage(context, intent.getStringExtra("text") ?: "Copied image")
         }
     }
 
@@ -63,6 +65,19 @@ class DebugDataReceiver : BroadcastReceiver() {
         clips.items().forEach { clips.delete(it.id) }
         words.clearAll()
         prefs.textReplacements = emptyList()
+    }
+
+    private fun copyImage(context: Context, caption: String) {
+        val bmp = android.graphics.Bitmap.createBitmap(640, 420, android.graphics.Bitmap.Config.ARGB_8888)
+        val c = android.graphics.Canvas(bmp)
+        c.drawColor(0xFFF4A6B4.toInt())
+        val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF5A0F1C.toInt(); textSize = 56f }
+        c.drawCircle(320f, 170f, 90f, p)
+        c.drawText(caption, 40f, 380f, p)
+        val out = java.io.ByteArrayOutputStream()
+        bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
+        val uri = ClipImageProvider.shareBytes(context, out.toByteArray(), "image/png", "debug") ?: return
+        context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newUri(context.contentResolver, "Image", uri))
     }
 
     private fun copy(context: Context, text: String) {

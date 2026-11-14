@@ -106,15 +106,28 @@ class Corrector(private val dict: Dictionary, private val extraWords: (String) -
         if (extraWords(t) > 0) return null
         if (t.length < 2) return null
         // A contraction typed without its apostrophe ("dont", "im") always means the contraction.
-        for (p in 1 until t.length) {
-            val withApostrophe = t.substring(0, p) + "'" + t.substring(p)
-            dict.displayForm(withApostrophe)?.let { return matchCase(typed, it) }
-        }
+        contraction(typed)?.let { return it }
         val typedScore = score(0, 0f)
         val limit = if (t.length <= 3) 1.0f else MAX_COST
         val best = candidates(typed, limit, 3, touches, context).firstOrNull() ?: return null
         if (best.score - typedScore < MIN_GAIN) return null
         return matchCase(typed, best.word)
+    }
+
+    /**
+     * The contraction [typed] spells without its apostrophe ("whens" -> "when's", "its" -> "it's",
+     * "im" -> "I'm"), in the typed word's case, or null. The most common one if there are several.
+     */
+    fun contraction(typed: String): String? {
+        val t = typed.lowercase()
+        if (t.length < 2 || t.any { !it.isLetter() }) return null
+        var best: String? = null
+        var bestFreq = -1
+        for (p in 1 until t.length) {
+            val i = dict.indexOf(t.substring(0, p) + "'" + t.substring(p))
+            if (i >= 0 && dict.freq[i] > bestFreq && dict.keys[i] !in blocked) { best = dict.words[i]; bestFreq = dict.freq[i] }
+        }
+        return best?.let { matchCase(typed, it) }
     }
 
     private fun fill(rows: Array<FloatArray>, d: Int, k: String, t: String, taps: List<Touch?>?) {

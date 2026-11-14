@@ -27,7 +27,8 @@ import kotlin.math.abs
 /**
  * The clipboard panel (opened from the toolbar or the emoji-key menu), drawn into the keys area
  * like the emoji panel. Its title, back button and Clear are in the suggestion bar (see
- * KeyboardView). Tap a clip to paste it; hold it for Pin / Unpin and Delete.
+ * KeyboardView). Tap a clip to paste it; hold it for Pin / Unpin and Delete. Hold a pinned clip
+ * and move it to drag it to another place among the pinned ones.
  *
  *  - Gboard style: "Pinned" and "Recent" sections of cards in two columns, each card as tall as its
  *    text (up to five lines) and packed into the shorter column, pinned cards marked with a pin, and
@@ -45,6 +46,10 @@ class ClipboardPanel(private val host: View, private val callbacks: Callbacks) {
         fun onCardMenu(clip: ClipHistory.Clip, anchor: RectF)
         fun onClear()
         fun onFeedback()
+        /** Pinned clips were dragged into this order. */
+        fun onReorder(pinnedIds: List<Long>)
+        /** A held pinned clip started moving (its menu should close). */
+        fun onDragStart()
     }
 
     var theme: KeyboardTheme? = null
@@ -127,6 +132,18 @@ class ClipboardPanel(private val host: View, private val callbacks: Callbacks) {
     private var releasedCard = -1L
     private var releasedAt = 0L
 
+    // Dragging a pinned clip: the held card follows the finger (lifted), the others make room.
+    /** The held clip may be dragged (it is pinned, among others). */
+    private var liftable = false
+    private var dragId = -1L
+    private var dragAt = 0L
+    /** Where the finger holds the card, from its top-left; the finger's last position. */
+    private var grabDX = 0f
+    private var grabDY = 0f
+    private var fingerX = 0f
+    private var fingerY = 0f
+    private val dragRect = RectF()
+
     /** Call when the panel opens: reloads the clips and scrolls to the top. */
     fun open() {
         items = callbacks.clips()
@@ -135,6 +152,7 @@ class ClipboardPanel(private val host: View, private val callbacks: Callbacks) {
         layouts.clear()
         gridDirty = true
         cardX.clear(); cardY.clear(); cardAt.clear(); ghosts.clear()
+        dragId = -1L
     }
 
     /** True when Clear would remove something (pinned clips stay). */
@@ -229,8 +247,14 @@ class ClipboardPanel(private val host: View, private val callbacks: Callbacks) {
             }
             y = maxOf(bottoms[0], bottoms[1]) + gap / 2
         }
-        section("Recent", items.indices.filter { !items[it].pinned })
-        section("Pinned", items.indices.filter { items[it].pinned })
+        val recent = items.indices.filter { !items[it].pinned }
+        val pinned = items.indices.filter { items[it].pinned }
+        // Settings › Clipboard › Show First.
+        if (items.firstOrNull()?.pinned == true) {
+            section("Pinned", pinned); section("Recent", recent)
+        } else {
+            section("Recent", recent); section("Pinned", pinned)
+        }
         gridH = y + gap
     }
 
@@ -253,8 +277,24 @@ class ClipboardPanel(private val host: View, private val callbacks: Callbacks) {
         if (scroller.computeScrollOffset()) {
             scrollY = scroller.currY.toFloat()
             animating = true
-        } else if (target != Target.LIST && !scrolling) {
+        } else if (target != Target.LIST && !scrolling && dragId < 0) {
             scrollY = scrollY.coerceIn(0f, maxScroll)
+        }
+        // A card dragged near the top or bottom edge scrolls the list.
+        if (dragId >= 0) {
+            val edge = DRAG_EDGE_PT * scale
+            val step = when {
+                fingerY < listTop + edge -> -(1f - (fingerY - listTop) / edge).coerceIn(0f, 1f)
+                fingerY > listBottom - edge -> (1f - (listBottom - fingerY) / edge).coerceIn(0f, 1f)
+                else -> 0f
+            } * DRAG_SCROLL_PT * scale * frameDt / 16f
+            val next = (scrollY + step).coerceIn(0f, maxScroll)
+            if (next != scrollY) {
+                scrollY = next
+                rawScroll = next
+                reorderUnderFinger()
+                animating = true
+            }
         }
         canvas.save()
         canvas.translate(area.left, area.top)
@@ -295,6 +335,13 @@ class ClipboardPanel(private val host: View, private val callbacks: Callbacks) {
                 slot.offsetTo(nx, ny - scrollY)
                 animating = true
             }
+            if (c.id == dragId) {
+                // Drawn last, under the finger; it glides into its slot when let go.
+                dragRect.set(fingerX - grabDX, fingerY - grabDY, fingerX - grabDX + slot.width(), fingerY - grabDY + slot.height())
+                cardX[c.id] = dragRect.left
+                cardY[c.id] = dragRect.top + scrollY
+                continue
+            }
             cardX[c.id] = slot.left
             cardY[c.id] = slot.top + scrollY
             if (slot.bottom < listTop || slot.top > listBottom) continue
@@ -306,9 +353,51 @@ class ClipboardPanel(private val host: View, private val callbacks: Callbacks) {
             if (c.id == releasedCard && now - releasedAt < RELEASE_MS) animating = true
         }
         canvas.restore()
+        if (dragId >= 0) items.firstOrNull { it.id == dragId }?.let { if (drawLifted(canvas, t, it)) animating = true }
 
         canvas.restore()
         if (animating) host.postInvalidateOnAnimation()
+    }
+
+    /** The dragged card, lifted above the others with a shadow. Returns true while it is still lifting. */
+    private fun drawLifted(canvas: Canvas, t: KeyboardTheme, c: ClipHistory.Clip): Boolean {
+        val p = if (!ValueAnimator.areAnimatorsEnabled()) 1f else ((SystemClock.uptimeMillis() - dragAt) / LIFT_MS.toFloat()).coerceIn(0f, 1f)
+        val s = 1f + (LIFT_SCALE - 1f) * (1f - (1f - p) * (1f - p))
+        val radius = (if (listStyle) GROUP_RADIUS_PT else CARD_RADIUS_PT) * scale
+        canvas.save()
+        canvas.scale(s, s, dragRect.centerX(), dragRect.centerY())
+        fill.color = 0x40000000
+        canvas.drawRoundRect(dragRect.left, dragRect.top + 4f * scale * p, dragRect.right, dragRect.bottom + 4f * scale * p, radius, radius, fill)
+        fill.color = t.letterKey
+        canvas.drawRoundRect(dragRect, radius, radius, fill)
+        canvas.save()
+        clipPath.reset()
+        clipPath.addRoundRect(dragRect, radius, radius, Path.Direction.CW)
+        canvas.clipPath(clipPath)
+        drawCard(canvas, t, c, dragRect, 1f, pressed = false, index = 0)
+        canvas.restore()
+        canvas.restore()
+        return p < 1f
+    }
+
+    /** Moves the dragged clip to the pinned slot under the card's centre, if it is over another one. */
+    private fun reorderUnderFinger() {
+        val from = items.indexOfFirst { it.id == dragId }
+        if (from < 0) return
+        val cx = fingerX - grabDX + dragRect.width() / 2
+        val cy = fingerY - grabDY + dragRect.height() / 2
+        val to = items.indices.firstOrNull { i -> i != from && items[i].pinned && cardRect(i, r).contains(cx, cy) } ?: return
+        items = items.toMutableList().apply { add(to, removeAt(from)) }
+        if (!listStyle) layoutGrid()
+        host.invalidate()
+    }
+
+    /** Lets go of a dragged clip: the order is kept. */
+    private fun endDrag() {
+        if (dragId < 0) return
+        dragId = -1L
+        callbacks.onReorder(items.filter { it.pinned }.map { it.id })
+        host.invalidate()
     }
 
     /** Nothing copied yet: a short title and what will appear here. */
@@ -433,7 +522,8 @@ class ClipboardPanel(private val host: View, private val callbacks: Callbacks) {
         if (listStyle || bmp == null) {
             label.textSize = (if (listStyle) 15f else 13f) * scale
             label.color = if (listStyle) t.text else t.text and 0x00FFFFFF or 0x99000000.toInt()
-            val label0 = if (uri in thumbsFailed) "Screenshot unavailable" else "Screenshot"
+            val kind = if (c.copiedImage) "Image" else "Screenshot"
+            val label0 = if (uri in thumbsFailed) "$kind unavailable" else kind
             if (listStyle) {
                 canvas.drawText(label0, box.right + 12f * scale, rect.centerY() - (label.descent() + label.ascent()) / 2, label)
             } else {
@@ -523,6 +613,8 @@ class ClipboardPanel(private val host: View, private val callbacks: Callbacks) {
                 downX = x; downY = y; lastY = y
                 scrolling = false
                 longPressed = false
+                liftable = false
+                dragId = -1L
                 card = -1
                 target = when {
                     y in listTop..listBottom -> cardAt(x, y).let { card = it; if (it >= 0) Target.CARD else Target.LIST }
@@ -532,7 +624,24 @@ class ClipboardPanel(private val host: View, private val callbacks: Callbacks) {
             }
             MotionEvent.ACTION_MOVE -> {
                 velocity?.addMovement(e)
-                if (!scrolling && (target == Target.CARD || target == Target.LIST) && abs(y - downY) > slop) {
+                fingerX = x
+                fingerY = y
+                // A held pinned clip that moves is picked up.
+                if (dragId < 0 && liftable && abs(x - downX) + abs(y - downY) > slop) {
+                    items.getOrNull(card)?.let { c ->
+                        val rect = cardRect(card, r)
+                        grabDX = downX - rect.left
+                        grabDY = downY - rect.top
+                        dragRect.set(rect)
+                        dragId = c.id
+                        dragAt = SystemClock.uptimeMillis()
+                        callbacks.onDragStart()
+                        callbacks.onFeedback()
+                    }
+                }
+                if (dragId >= 0) {
+                    reorderUnderFinger()
+                } else if (!scrolling && (target == Target.CARD || target == Target.LIST) && abs(y - downY) > slop) {
                     scrolling = true
                     handler.removeCallbacks(longPress)
                 }
@@ -544,6 +653,14 @@ class ClipboardPanel(private val host: View, private val callbacks: Callbacks) {
             }
             MotionEvent.ACTION_UP -> {
                 handler.removeCallbacks(longPress)
+                if (dragId >= 0) {
+                    endDrag()
+                    liftable = false
+                    target = Target.NONE
+                    velocity?.recycle(); velocity = null
+                    host.invalidate()
+                    return
+                }
                 if (scrolling) {
                     // Hand the finger's speed to the scroll: a flick coasts on, and past an end
                     // the list springs back.
@@ -569,6 +686,8 @@ class ClipboardPanel(private val host: View, private val callbacks: Callbacks) {
             }
             MotionEvent.ACTION_CANCEL -> {
                 handler.removeCallbacks(longPress)
+                endDrag()
+                liftable = false
                 target = Target.NONE
                 if (scrollY < 0f || scrollY > maxScroll) scroller.springBack(0, scrollY.toInt(), 0, 0, 0, maxScroll.toInt())
                 scrolling = false
@@ -586,6 +705,7 @@ class ClipboardPanel(private val host: View, private val callbacks: Callbacks) {
     private fun onLongPress() {
         val c = items.getOrNull(card) ?: return
         longPressed = true
+        liftable = c.pinned && items.count { it.pinned } > 1
         callbacks.onFeedback()
         callbacks.onCardMenu(c, RectF(cardRect(card, r)))
         target = Target.NONE
@@ -619,5 +739,10 @@ class ClipboardPanel(private val host: View, private val callbacks: Callbacks) {
         const val LIST_THUMB_INSET_PT = 6f
         const val MAX_THUMBS = 24
         const val THUMB_FADE_MS = 150L
+        /** Dragging a pinned clip: how much it lifts, how fast, and the edge band that scrolls the list. */
+        const val LIFT_SCALE = 1.04f
+        const val LIFT_MS = 150L
+        const val DRAG_EDGE_PT = 44f
+        const val DRAG_SCROLL_PT = 6f
     }
 }

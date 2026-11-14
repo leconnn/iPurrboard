@@ -111,6 +111,8 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         fun onClipPinned(clip: dev.leconnn.ioskeyboard.text.ClipHistory.Clip, pinned: Boolean) = Unit
         fun onClipDelete(clip: dev.leconnn.ioskeyboard.text.ClipHistory.Clip) = Unit
         fun onClipClear() = Unit
+        /** The pinned clips were dragged into this order. */
+        fun onClipReorder(pinnedIds: List<Long>) = Unit
         fun onEditAction(action: EditingPanel.Action, selecting: Boolean) = Unit
         /** The GIF panel's search field was tapped: type the search with the keys. */
         fun onGifSearch() = Unit
@@ -195,12 +197,15 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         override fun clips() = listener.clips()
         override fun onPaste(clip: dev.leconnn.ioskeyboard.text.ClipHistory.Clip) = listener.onClipPaste(clip)
         override fun onCardMenu(clip: dev.leconnn.ioskeyboard.text.ClipHistory.Clip, anchor: RectF) {
-            showMenu(listOf(if (clip.pinned) "Unpin" else "Pin", "Delete"), anchor) { i ->
+            showMenu(listOf(if (clip.pinned) "Unpin" else "Pin", "Delete"), anchor, destructive = 1) { i ->
                 if (i == 0) listener.onClipPinned(clip, !clip.pinned) else listener.onClipDelete(clip)
                 clipboard.refresh()
             }
         }
         override fun onClear() { listener.onClipClear(); clipboard.refresh() }
+        override fun onReorder(pinnedIds: List<Long>) = listener.onClipReorder(pinnedIds)
+        // A held pinned clip that starts moving is being dragged: its menu goes.
+        override fun onDragStart() = closeMenu()
         override fun onFeedback() = listener.onFeedback(KeyKind.CHAR)
     }).also { it.theme = theme }
 
@@ -421,6 +426,9 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     /** Row with a checkmark (the current keyboard), or -1; for the open and the closing menu. */
     private var menuChecked = -1
     private var menuGoneChecked = -1
+    /** Row drawn in red (Delete, Clear), or -1; for the open and the closing menu. */
+    private var menuDestructive = -1
+    private var menuGoneDestructive = -1
     private val checkPath = Path()
     private val menuLayer = RectF()
 
@@ -1995,7 +2003,11 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 keyPaint.color = theme.text and 0x00FFFFFF or 0x26000000
                 canvas.drawRect(m.left + 14f * scale, rowTop, m.right - 14f * scale, rowTop + maxOf(1f, 0.5f * scale), keyPaint)
             }
-            textPaint.color = if (i == selected) theme.accentText else theme.text
+            textPaint.color = when {
+                i == selected -> theme.accentText
+                i == (if (open != null) menuDestructive else menuGoneDestructive) -> destructiveRed
+                else -> theme.text
+            }
             canvas.drawText(item, m.left + 16f * scale, rowTop + rowH / 2 - (fm.ascent + fm.descent) / 2, textPaint)
             if (i == (if (open != null) menuChecked else menuGoneChecked)) {
                 // The current keyboard: a checkmark at the row's end.
@@ -2017,6 +2029,20 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         textPaint.textAlign = Paint.Align.CENTER
         canvas.restoreToCount(layer)
         return animating
+    }
+
+    /** iOS's red for destructive actions (lighter in dark mode). */
+    private val destructiveRed get() = if (Color.luminance(theme.text) > 0.5f) 0xFFFF453A.toInt() else 0xFFFF3B30.toInt()
+
+    /**
+     * Clear asks first, as iOS does before deleting: a menu under the button whose one action
+     * clears the unpinned clips; tapping anywhere else keeps them.
+     */
+    private fun confirmClear() {
+        if (!clipboard.canClear) return
+        val anchor = RectF(width - 90f * scale, -barPx, width.toFloat() - 8f * scale, 0f)
+        // Pinned clips stay, and the label says so.
+        showMenu(listOf("Clear All Unpinned"), anchor, growFromAnchor = true, destructive = 0) { clipboard.clear() }
     }
 
     /** The ⌄ button's dropdown: the toolbar buttons that don't fit in the bar, by name. */
@@ -2044,7 +2070,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
      * Opens an iOS-style menu of [labels] above [anchor] (pixels, relative to the keys' top), or
      * below it when there is no room above; [onPick] gets the chosen index.
      */
-    fun showMenu(labels: List<String>, anchor: RectF, checked: Int = -1, growFromAnchor: Boolean = false, onPick: (Int) -> Unit) {
+    fun showMenu(labels: List<String>, anchor: RectF, checked: Int = -1, growFromAnchor: Boolean = false, destructive: Int = -1, onPick: (Int) -> Unit) {
         val w = MENU_WIDTH_PT * scale
         val n = labels.size
         val full = MENU_ROW_PT * scale * n
@@ -2080,6 +2106,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         menuFromMore = false
         menu = labels
         menuChecked = checked
+        menuDestructive = destructive
         menuGone = null
         menuAction = onPick
         menuSelected = -1
@@ -2095,6 +2122,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         menuGone = menu
         menuGoneSelected = menuSelected
         menuGoneChecked = menuChecked
+        menuGoneDestructive = menuDestructive
         menuGoneAt = SystemClock.uptimeMillis()
         menuGonePivot = menuPivot
         menu = null
@@ -2159,7 +2187,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                     barGesture = false
                     if (target != BarTarget.NONE && barTargetAt(e.x) == target && e.y < keysTop + 12f * scale) when (target) {
                         BarTarget.BACK -> panel = Panel.KEYS
-                        BarTarget.CLEAR -> clipboard.clear()
+                        BarTarget.CLEAR -> confirmClear()
                         BarTarget.SEARCH -> listener.onEmojiSearch()
                         BarTarget.STICKER -> {
                             val i = ((e.x - panelStickersLeft) / stickerCell).toInt()

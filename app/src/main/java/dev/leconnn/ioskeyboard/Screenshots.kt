@@ -50,6 +50,15 @@ object Screenshots {
     /** A small version of the image for the clipboard panel, or null if it is gone or unreadable. */
     fun thumbnail(context: Context, uri: String, px: Int): Bitmap? = runCatching {
         val u = Uri.parse(uri)
+        if (u.scheme == "file") {
+            // A copied image the keyboard keeps (see ClipImages): decoded at about [px].
+            val path = u.path ?: return@runCatching null
+            val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            android.graphics.BitmapFactory.decodeFile(path, bounds)
+            var sample = 1
+            while (minOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= px) sample *= 2
+            return@runCatching android.graphics.BitmapFactory.decodeFile(path, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })
+        }
         if (Build.VERSION.SDK_INT >= 29) {
             context.contentResolver.loadThumbnail(u, Size(px, px), null)
         } else {

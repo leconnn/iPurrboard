@@ -21,6 +21,7 @@ import android.content.ClipboardManager
 import android.os.SystemClock
 import dev.leconnn.ioskeyboard.text.ClipEntities
 import dev.leconnn.ioskeyboard.text.ClipHistory
+import dev.leconnn.ioskeyboard.text.ClipImages
 import dev.leconnn.ioskeyboard.text.FieldTraits
 import dev.leconnn.ioskeyboard.text.SmartPunctuation
 import dev.leconnn.ioskeyboard.text.WordComposer
@@ -56,9 +57,18 @@ class IosKeyboardService : InputMethodService(), KeyboardView.Listener {
     /** What tapping each chip in the bar does (paste its text or image). */
     private var chipActions: List<() -> Unit> = emptyList()
 
-    /** The latest screenshot (Save Recent Screenshots), offered as a chip like a copy. */
-    private class RecentShot(val uri: String, val at: Long) { var done = false; var thumb: android.graphics.Bitmap? = null }
+    /**
+     * The latest screenshot (Save Recent Screenshots) or copied image, offered as a chip like a
+     * copied text. [screenshot]: from the photo library (else copied, from [source] if known).
+     */
+    private class RecentShot(val uri: String, val at: Long, val screenshot: Boolean = true, val source: String? = null) {
+        var done = false
+        var thumb: android.graphics.Bitmap? = null
+    }
     private var recentShot: RecentShot? = null
+    /** The clipboard image last read (its URI in the copying app), so reopening the keyboard doesn't read it again. */
+    private var lastClipImage: String? = null
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val clipListener = ClipboardManager.OnPrimaryClipChangedListener {
         // Copied just now: in the app that has the input focus (Android tells the keyboard which
         // app's window is focused even when it has no text field).
@@ -189,11 +199,9 @@ class IosKeyboardService : InputMethodService(), KeyboardView.Listener {
         val clip = runCatching { cm.primaryClip }.getOrNull() ?: return
         // Password managers mark copied secrets as sensitive: never show or store them.
         if (clip.description?.extras?.getBoolean(ClipDescription.EXTRA_IS_SENSITIVE) == true) return
-        val text = runCatching { clip.getItemAt(0)?.coerceToText(this)?.toString() }.getOrNull()
-        if (text.isNullOrBlank() || (!newCopy && text == recentCopy?.text)) return
-        // Age the chip from when the text was really copied (the clip's own timestamp), so
-        // restarting the keyboard doesn't make an old copy look new. Accept either clock the
-        // timestamp may use: wall-clock time, or time since boot.
+        // Age the chip from when it was really copied (the clip's own timestamp), so restarting
+        // the keyboard doesn't make an old copy look new. Accept either clock the timestamp may
+        // use: wall-clock time, or time since boot.
         val now = SystemClock.elapsedRealtime()
         val wall = System.currentTimeMillis()
         val ts = clip.description?.timestamp ?: 0L
@@ -202,14 +210,56 @@ class IosKeyboardService : InputMethodService(), KeyboardView.Listener {
             ts in 1..now -> ts
             else -> now
         }
+        // A copied image (a photo, a picture from a web page): its URI and type.
+        val item = runCatching { clip.getItemAt(0) }.getOrNull()
+        val imageUri = item?.uri
+        if (imageUri != null) {
+            val desc = clip.description
+            val mime = (0 until (desc?.mimeTypeCount ?: 0)).map { desc!!.getMimeType(it) }.firstOrNull { it.startsWith("image/") }
+                ?: runCatching { contentResolver.getType(imageUri) }.getOrNull()?.takeIf { it.startsWith("image/") }
+            if (mime != null) {
+                readClipImage(imageUri, mime, copiedAt, wall - (now - copiedAt), source, newCopy)
+                return
+            }
+        }
+        val text = runCatching { item?.coerceToText(this)?.toString() }.getOrNull()
+        if (text.isNullOrBlank() || (!newCopy && text == recentCopy?.text)) return
         recentCopy = RecentCopy(text, copiedAt, source?.takeIf { it != packageName })
+        // The newest copy is text now: an earlier copied image's chip goes.
+        recentShot?.takeIf { !it.screenshot }?.done = true
         // Not kept from password or incognito fields.
         if (prefs.clipboardHistory && traits.learningAllowed) clipHistory.add(text)
         if (::view.isInitialized) view.refreshClipboard()
         showSuggestions()
     }
 
-    /** The copied-text chips for the bar: the whole clip, then up to two details picked out of it. */
+    /**
+     * A copied image: the keyboard keeps a copy (the copying app's access ends when the clipboard
+     * changes), adds it to the history and offers it as the bar's chip. [at] / [wallAt]: when it
+     * was copied (time since boot / wall clock).
+     */
+    private fun readClipImage(uri: android.net.Uri, mime: String, at: Long, wallAt: Long, source: String?, newCopy: Boolean) {
+        val key = uri.toString()
+        if (!newCopy && key == lastClipImage) return
+        lastClipImage = key
+        val keep = prefs.clipboardHistory && traits.learningAllowed
+        val app = source?.takeIf { it != packageName }
+        imageWorker.execute {
+            val stored = ClipImages.store(this, uri, mime) ?: return@execute
+            val added = keep && clipHistory.addImage(stored, wallAt, renew = newCopy)
+            val shot = RecentShot(stored, at, screenshot = false, source = app)
+            shot.thumb = Screenshots.thumbnail(this, stored, (CHIP_THUMB_DP * resources.displayMetrics.density).toInt())
+            // The clipboard can change before the keyboard has a view: post to the main thread.
+            mainHandler.post {
+                // Not kept in history: still offered once in the bar.
+                recentShot = shot
+                recentCopy = null
+                if (added && ::view.isInitialized) view.refreshClipboard()
+                showSuggestions()
+            }
+        }
+    }
+
     /**
      * Chips for the newest copied text (plus details picked out of it) or the newest screenshot,
      * like Gboard's "recently copied text and images" in the suggestion bar. Each lasts [CHIP_MS]
@@ -220,13 +270,17 @@ class IosKeyboardService : InputMethodService(), KeyboardView.Listener {
         if (!prefs.showCopiedItems || composer.composing || !traits.suggestionsAllowed || traits.isPassword) return emptyList()
         val now = SystemClock.elapsedRealtime()
         val copy = recentCopy?.takeIf { !it.done && now - it.at < CHIP_MS }
-        val shot = recentShot?.takeIf { !it.done && now - it.at < CHIP_MS && prefs.clipboardScreenshots && acceptsImages() }
+        val shot = recentShot?.takeIf { !it.done && now - it.at < CHIP_MS && (!it.screenshot || prefs.clipboardScreenshots) && acceptsImages() }
         if (shot != null && (copy == null || shot.at >= copy.at)) {
             view.removeCallbacks(chipExpired)
             view.postDelayed(chipExpired, CHIP_MS - (now - shot.at))
             chipActions = listOf({ shot.done = true; pasteImage(android.net.Uri.parse(shot.uri)) })
-            if (iosPasteStyle) return listOf(Chip("Screenshot", ChipIcon.NONE, shot.thumb, subtitle = "paste from Screenshots"))
-            return listOf(Chip("Screenshot", ChipIcon.NONE, shot.thumb))
+            val title = if (shot.screenshot) "Screenshot" else "Image"
+            if (iosPasteStyle) {
+                val from = if (shot.screenshot) "Screenshots" else shot.source?.let(::appLabel)
+                return listOf(Chip(title, ChipIcon.NONE, shot.thumb, subtitle = if (from != null) "paste from $from" else "paste"))
+            }
+            return listOf(Chip(title, ChipIcon.NONE, shot.thumb))
         }
         if (copy == null) return updateChip()
         view.removeCallbacks(chipExpired)
@@ -317,7 +371,7 @@ class IosKeyboardService : InputMethodService(), KeyboardView.Listener {
         updateAutoShift()
     }
 
-    override fun clips(): List<ClipHistory.Clip> = clipHistory.items()
+    override fun clips(): List<ClipHistory.Clip> = clipHistory.items(pinnedFirst = prefs.clipboardPinnedFirst)
 
     override fun onClipPaste(clip: ClipHistory.Clip) {
         val image = clip.image
@@ -381,7 +435,8 @@ class IosKeyboardService : InputMethodService(), KeyboardView.Listener {
      */
     private fun pasteImage(source: android.net.Uri) {
         val info = currentInputEditorInfo ?: return
-        val mime = runCatching { contentResolver.getType(source) }.getOrNull() ?: "image/png"
+        val mime = if (source.scheme == "file") ClipImages.mimeOf(source.toString())
+            else runCatching { contentResolver.getType(source) }.getOrNull() ?: "image/png"
         val accepted = info.contentMimeTypes?.any { android.content.ClipDescription.compareMimeTypes(mime, it) } == true
         if (!accepted) {
             notice("Images can't be pasted here")
@@ -392,10 +447,11 @@ class IosKeyboardService : InputMethodService(), KeyboardView.Listener {
             view.post {
                 val ic = ic ?: return@post
                 if (shared == null) {
-                    notice("The screenshot is no longer available")
+                    notice(if (source.scheme == "file") "The image is no longer available" else "The screenshot is no longer available")
                     return@post
                 }
-                val content = android.view.inputmethod.InputContentInfo(shared, android.content.ClipDescription("Screenshot", arrayOf(mime)))
+                val content = android.view.inputmethod.InputContentInfo(shared,
+                    android.content.ClipDescription(if (source.scheme == "file") "Image" else "Screenshot", arrayOf(mime)))
                 ic.commitContent(content, android.view.inputmethod.InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION, null)
             }
         }
@@ -404,6 +460,7 @@ class IosKeyboardService : InputMethodService(), KeyboardView.Listener {
     override fun onClipPinned(clip: ClipHistory.Clip, pinned: Boolean) = clipHistory.setPinned(clip.id, pinned)
     override fun onClipDelete(clip: ClipHistory.Clip) = clipHistory.delete(clip.id)
     override fun onClipClear() = clipHistory.clearUnpinned()
+    override fun onClipReorder(pinnedIds: List<Long>) = clipHistory.reorderPinned(pinnedIds)
 
     // ---- toolbar and panels --------------------------------------------------------------
 

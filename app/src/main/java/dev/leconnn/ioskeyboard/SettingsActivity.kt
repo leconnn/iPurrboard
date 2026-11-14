@@ -72,6 +72,7 @@ class SettingsActivity : Activity() {
         CLIPBOARD("Clipboard"),
         COPIED_STYLE("Copied Items Style"),
         RETENTION("Keep History For"),
+        CLIP_ORDER("Show First"),
         PRIVACY("Privacy Policy"),
         RESET("Reset"),
         UPDATE("Software Update"),
@@ -309,6 +310,10 @@ class SettingsActivity : Activity() {
                     "Chips: the copied text plus details picked out of it, such as a phone number or a link.") { prefs.copiedStyle = it }
             Page.RETENTION -> choices(list, null, Prefs.Retention.entries, { it.label }, prefs.clipboardRetention,
                 "Pinned items are kept until you unpin them.") { prefs.clipboardRetention = it }
+            Page.CLIP_ORDER -> choices(list, null, listOf(false, true), { if (it) "Pinned" else "Recent" }, prefs.clipboardPinnedFirst,
+                "Which items the clipboard shows at the top. To rearrange pinned items, touch and hold one, then drag it.") {
+                prefs.clipboardPinnedFirst = it
+            }
             Page.PRIVACY -> privacy(list)
             Page.RESET -> reset(list)
             Page.UPDATE -> softwareUpdate(list)
@@ -676,12 +681,13 @@ class SettingsActivity : Activity() {
         list.section()
         list.switchRow("Show Copied Items", prefs.showCopiedItems) { prefs.showCopiedItems = it }
         list.switchRow("Clipboard History", prefs.clipboardHistory) { prefs.clipboardHistory = it }
-        list.footer("Recently copied text appears in the suggestion bar, and in the clipboard (hold the emoji key, " +
-            "or use the toolbar). Text marked sensitive, such as passwords, is never kept.")
+        list.footer("Recently copied text and images appear in the suggestion bar, and in the clipboard (hold the " +
+            "emoji key, or use the toolbar). Text marked sensitive, such as passwords, is never kept.")
 
         list.section()
         list.navRow("Copied Items Style", if (prefs.copiedStyle == KeyStyle.IOS) "Banner" else "Chips") { open(Page.COPIED_STYLE) }
         list.navRow("Keep History For", prefs.clipboardRetention.label) { open(Page.RETENTION) }
+        list.navRow("Show First", if (prefs.clipboardPinnedFirst) "Pinned" else "Recent") { open(Page.CLIP_ORDER) }
 
         list.section()
         list.switchRow("Save Recent Screenshots", prefs.clipboardScreenshots && Screenshots.granted(this)) { on ->
