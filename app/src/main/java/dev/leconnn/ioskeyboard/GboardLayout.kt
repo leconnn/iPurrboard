@@ -35,12 +35,13 @@ object GboardLayouts : KeyLayoutSet {
                 hints?.getOrNull(i)?.toString())
         }
 
-    private fun bottomRow(planeKey: Key) = listOf(
+    /** The bottom row; Gboard's second symbols page has < and > where the comma and period are. */
+    private fun bottomRow(planeKey: Key, left: String = ",", right: String = ".") = listOf(
         planeKey,
-        Key(KeyKind.CHAR, ",", 3, cap(15f, 10f, 3)),
+        Key(KeyKind.CHAR, left, 3, cap(15f, 10f, 3)),
         Key(KeyKind.EMOJI, "", 3, cap(25f, 10f, 3)),
         Key(KeyKind.SPACE, " ", 3, cap(35f, 40f, 3)),
-        Key(KeyKind.CHAR, ".", 3, cap(75f, 10f, 3)),
+        Key(KeyKind.CHAR, right, 3, cap(75f, 10f, 3)),
         Key(KeyKind.RETURN, "\n", 3, cap(85f, 15f, 3)),
     )
 
@@ -89,7 +90,7 @@ object GboardLayouts : KeyLayoutSet {
             listOf(leftKey(KeyKind.TO_NUMBERS, "123", 2)) +
             chars("%©®™✓[]", 2, 15f) +
             listOf(delete()) +
-            bottomRow(leftKey(KeyKind.TO_LETTERS, "ABC", 3))
+            bottomRow(leftKey(KeyKind.TO_LETTERS, "ABC", 3), left = "<", right = ">")
 
     override fun numberRow(): List<Key> = "1234567890".mapIndexed { i, c ->
         // 42 pt keys (letters are 44) ending 10 pt above the q row, as between letter rows.

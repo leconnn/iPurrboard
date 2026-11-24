@@ -109,9 +109,43 @@ class Corrector(private val dict: Dictionary, private val extraWords: (String) -
         contraction(typed)?.let { return it }
         val typedScore = score(0, 0f)
         val limit = if (t.length <= 3) 1.0f else MAX_COST
-        val best = candidates(typed, limit, 3, touches, context).firstOrNull() ?: return null
+        // One word, or two run together ("sampletext", "samplentext" -> "sample text").
+        val best = (candidates(typed, limit, 3, touches, context) + listOfNotNull(split(typed)))
+            .maxByOrNull { it.score } ?: return null
         if (best.score - typedScore < MIN_GAIN) return null
         return matchCase(typed, best.word)
+    }
+
+    /**
+     * Two words typed without the space between them, as Gboard reads them: the space missed
+     * ("sampletext") or a key above the space bar hit instead of it ("samplentext": n for space).
+     * Only for an unknown word, and only when both halves are known words; scored by the rarer
+     * half. The best split, as "first second" (in the typed word's case), or null.
+     */
+    fun split(typed: String): Candidate? {
+        val t = typed.lowercase()
+        if (t.length < SPLIT_MIN || t.any { !it.isLetter() && it != '\'' } || dict.contains(t) || extraWords(t) > 0) return null
+        fun known(w: String): Pair<String, Int>? {
+            if (w.length == 1 && w != "a" && w != "i") return null
+            if (w in blocked) return null
+            val i = dict.indexOf(w)
+            if (i >= 0) return dict.words[i] to dict.freq[i]
+            return extraWords(w).takeIf { it > 0 }?.let { w to SPLIT_USER_FREQ }
+        }
+        var best: Candidate? = null
+        fun offer(left: String, right: String, cost: Float) {
+            val a = known(left) ?: return
+            val b = known(right) ?: return
+            val freq = minOf(a.second, b.second)
+            if (freq < SPLIT_MIN_FREQ) return
+            val s = score(freq, cost)
+            if (best == null || s > best!!.score) best = Candidate(matchCase(typed, "${a.first} ${b.first}"), cost, s)
+        }
+        for (i in 1 until t.length) {
+            offer(t.substring(0, i), t.substring(i), SPLIT_MISSED)
+            if (t[i] in SPACE_NEIGHBOURS && i + 1 < t.length) offer(t.substring(0, i), t.substring(i + 1), SPLIT_HIT)
+        }
+        return best
     }
 
     /**
@@ -193,6 +227,15 @@ class Corrector(private val dict: Dictionary, private val extraWords: (String) -
         /** Known words this rare may still be typos of a much more frequent neighbour. */
         const val RARE = 2000
         const val MIN_GAIN_KNOWN = 3.0
+        /** Splitting two words run together: shortest typed word, cost of a missed space and of a
+         *  space typed as a neighbouring key, the rarest half allowed, and a user word's weight. */
+        const val SPLIT_MIN = 4
+        const val SPLIT_MISSED = 0.4f
+        const val SPLIT_HIT = 0.6f
+        const val SPLIT_MIN_FREQ = 200
+        const val SPLIT_USER_FREQ = 50_000
+        /** Keys just above the space bar, hit instead of it. */
+        const val SPACE_NEIGHBOURS = "cvbnm"
 
         /** Keeps the typed word's capitalisation: "Teh" -> "The", "TEH" -> "THE", "teh" -> "the". */
         fun matchCase(typed: String, word: String): String = when {

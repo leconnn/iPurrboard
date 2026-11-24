@@ -63,6 +63,17 @@ class EmojiKitchen private constructor(
         /** An emoji compared without its variation selector (❤ and ❤️ are the same). */
         private fun key(emoji: String) = emoji.replace("️", "")
 
+        /**
+         * How many of the emoji typed last made [sticker], as Gboard removes them once it is
+         * sent: 2 when it mixes [prev] and [last] (the two typed in a row), 1 when it mixes
+         * [last] with another emoji, 0 when neither (the text changed since).
+         */
+        fun typedSources(sticker: Sticker, last: String, prev: String?): Int {
+            val pair = listOf(key(sticker.left), key(sticker.right)).sorted()
+            if (prev != null && pair == listOf(key(prev), key(last)).sorted()) return 2
+            return if (key(last) in pair) 1 else 0
+        }
+
         private fun emojiOf(code: String) = buildString {
             for (cp in code.split('-')) appendCodePoint(cp.toInt(16))
         }

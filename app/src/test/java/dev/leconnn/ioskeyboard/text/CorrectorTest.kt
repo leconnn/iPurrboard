@@ -78,6 +78,48 @@ class CorrectorTest {
         assertEquals("I'm", offered("im", autocorrect = true, d = both).first())
     }
 
+    @Test fun twoWordsRunTogether() {
+        // A missed space, and n (above the space bar) hit instead of it.
+        assertEquals("sample text", corrector.split("sampletext")?.word)
+        assertEquals("sample text", corrector.split("samplentext")?.word)
+        assertEquals("Sample text", corrector.split("Samplentext")?.word)
+        // A real word is never split ("into" isn't "in to").
+        assertNull(corrector.split("into"))
+    }
+
+    @Test fun twoWordsAreSuggestedAndCorrected() {
+        assertTrue(offered("samplentext", autocorrect = false).toString(), "sample text" in offered("samplentext", autocorrect = false))
+        assertEquals("sample text", corrector.autocorrect("samplentext"))
+    }
+
+    /** Suggestions with the user's word "iPurrboard" known. */
+    private fun withUserWord(typed: String, caps: Predictor.Caps = Predictor.Caps.NONE): List<String> {
+        val p = Predictor(dict, Corrector(dict) { if (it == "ipurrboard") 5 else 0 }, userWords = { prefix ->
+            if ("ipurrboard".startsWith(prefix.lowercase())) listOf("iPurrboard") else emptyList()
+        })
+        return p.predict(typed, "so", sentenceStart = false, autocorrect = true, caps = caps)
+            .let { listOfNotNull(it.centre, it.right).map { s -> s.text } }
+    }
+
+    @Test fun userWordFollowsTheTypedCase() {
+        assertTrue(withUserWord("ipur").toString(), "iPurrboard" in withUserWord("ipur"))
+        assertTrue(withUserWord("Ipur").toString(), "IPurrboard" in withUserWord("Ipur"))
+        assertTrue(withUserWord("IPUR").toString(), "IPURRBOARD" in withUserWord("IPUR"))
+        // Caps lock: all caps even after one letter (where case can't be read from the typed word).
+        val locked = withUserWord("I", Predictor.Caps.LOCK)
+        assertTrue(locked.toString(), locked.isNotEmpty() && locked.all { it == it.uppercase() })
+        // Typed in full in lowercase: offered as the user writes it.
+        assertEquals("iPurrboard", withUserWord("ipurrboard").first())
+    }
+
+    @Test fun nextWordsFollowShift() {
+        val p = Predictor(dict, corrector, { listOf("you", "the") })
+        val shifted = p.predict("", "so", sentenceStart = false, autocorrect = true, caps = Predictor.Caps.SHIFT)
+        assertEquals("You", shifted.centre?.text)
+        val locked = p.predict("", "so", sentenceStart = false, autocorrect = true, caps = Predictor.Caps.LOCK)
+        assertEquals("YOU", locked.centre?.text)
+    }
+
     @Test fun completions() {
         val c = dict.completions("hel", 4)
         assertTrue(c.toString(), "hello" in c && "help" in c)

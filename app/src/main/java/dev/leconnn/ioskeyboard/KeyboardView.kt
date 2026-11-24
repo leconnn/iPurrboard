@@ -84,6 +84,8 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         fun onCursorMove(dx: Int, dy: Int)
         fun onFeedback(kind: KeyKind)
         fun onShiftChanged(state: Glyphs.ShiftState)
+        /** The shift key now shows [state] (tapped, auto-capitalisation or caps lock). */
+        fun onShiftShown(state: Glyphs.ShiftState) = Unit
         /**
          * Shift was tapped: with text selected, change its case instead (Gboard's
          * recapitalization) and return true, leaving the shift key as it was.
@@ -654,6 +656,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         shiftChangedAt = if (isLaidOut) SystemClock.uptimeMillis() else 0L
         shift = s
         invalidate()
+        listener.onShiftShown(s)
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {

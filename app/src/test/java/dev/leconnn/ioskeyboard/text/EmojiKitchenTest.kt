@@ -17,6 +17,19 @@ class EmojiKitchenTest {
         }
     }
 
+    @Test fun stickerSourcesToRemove() {
+        val pair = EmojiKitchen.Sticker("u", "😀", "🐱")
+        // Made from the two typed in a row, in either order: both go.
+        assertEquals(2, EmojiKitchen.typedSources(pair, last = "🐱", prev = "😀"))
+        assertEquals(2, EmojiKitchen.typedSources(pair, last = "😀", prev = "🐱"))
+        // Made from the last one with another emoji: only that one goes.
+        assertEquals(1, EmojiKitchen.typedSources(pair, last = "🐱", prev = "x"))
+        // A heart typed with or without its variation selector.
+        assertEquals(1, EmojiKitchen.typedSources(EmojiKitchen.Sticker("u", "❤️", "😀"), last = "❤", prev = null))
+        // The text changed since: nothing goes.
+        assertEquals(0, EmojiKitchen.typedSources(pair, last = "🎉", prev = "😀"))
+    }
+
     @Test fun knownEmoji() = assertTrue(kitchen.has("😂") && kitchen.has("❤") && kitchen.has("❤️"))
 
     @Test fun pairFirst() {

@@ -18,8 +18,8 @@ android {
         minSdk = 26
         targetSdk = 36
         // Every release bumps both (the in-app updater compares versionName with GitHub releases).
-        versionCode = 4
-        versionName = "0.4"
+        versionCode = 5
+        versionName = "0.5"
         // GIF search is off in this app (no key is included).
         buildConfigField("String", "GIPHY_API_KEY", "\"\"")
         buildConfigField("boolean", "GIFS", "false")

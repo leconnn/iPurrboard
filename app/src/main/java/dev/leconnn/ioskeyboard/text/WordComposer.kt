@@ -55,7 +55,7 @@ class WordComposer(context: Context, private val ic: () -> InputConnection?) {
         /** Next words: the user's own word pairs first, then the built-in ones. */
         val predictor = Predictor(dict, corrector, { prev ->
             (users.nextWords(prev) + bigrams.after(prev)).distinctBy { it.lowercase() }
-        }, emoji, languages[0].startWords, languages[0].midWords)
+        }, emoji, languages[0].startWords, languages[0].midWords, { users.completions(it) })
 
         /** Applies Block Offensive Words; only ever called on the worker thread. */
         fun block(on: Boolean) {
@@ -74,9 +74,11 @@ class WordComposer(context: Context, private val ic: () -> InputConnection?) {
     private class Swiped(val inserted: String, val alternatives: List<String>)
 
     /** Everything a prediction depends on, captured on the main thread. */
-    private class Snapshot(val word: String, val context: String, val options: Options, val touches: List<Corrector.Touch?>) {
+    private class Snapshot(
+        val word: String, val context: String, val options: Options, val touches: List<Corrector.Touch?>, val caps: Predictor.Caps,
+    ) {
         fun sameAs(o: Snapshot?) = o != null && o.word == word && o.context == context && o.options === options &&
-            o.touches == touches
+            o.touches == touches && o.caps == caps
     }
 
     @Volatile private var engine: Engine? = null
@@ -84,6 +86,13 @@ class WordComposer(context: Context, private val ic: () -> InputConnection?) {
     private val worker = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
     var options = Options()
+    /** The keyboard's shift, which suggestions follow (set by the service as it changes). */
+    var caps = Predictor.Caps.NONE
+        set(value) {
+            if (field == value) return
+            field = value
+            refresh()
+        }
     /**
      * Set while delete auto-repeats: [refresh] waits, then runs once when this is cleared, so a
      * held delete doesn't recompute suggestions for every character.
@@ -484,7 +493,7 @@ class WordComposer(context: Context, private val ic: () -> InputConnection?) {
 
     private fun snapshot(): Snapshot? {
         val context = wordContext ?: ic()?.getTextBeforeCursor(MAX_CONTEXT, 0)?.toString() ?: return null
-        return Snapshot(word.toString(), context, options, touches.toList())
+        return Snapshot(word.toString(), context, options, touches.toList(), caps)
     }
 
     private fun compute(e: Engine, s: Snapshot): Pair<List<Predictor.Slot?>, String?> {
@@ -495,7 +504,7 @@ class WordComposer(context: Context, private val ic: () -> InputConnection?) {
         val prev = PREV_WORD.find(s.context)?.groupValues?.get(1)
         val sentenceStart = s.context.isBlank() || SENTENCE_END.containsMatchIn(s.context)
         val p = e.predictor.predict(normalise(s.word), prev, sentenceStart, s.options.autocorrect,
-            s.options.replacements, e.users.rejected, s.options.emojiSuggestions, s.touches)
+            s.options.replacements, e.users.rejected, s.options.emojiSuggestions, s.touches, s.caps)
         return listOf(p.left, p.centre, p.right) to math
     }
 

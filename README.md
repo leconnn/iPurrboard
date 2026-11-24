@@ -30,6 +30,7 @@ Requires Android 8.0 or newer. The Glass look's background blur needs Android 12
 **Typing**
 - iPhone key layout and sizes, key previews, long-press accents, caps lock and auto-capitalisation.
 - Predictive text, autocorrection that learns from you, Check Spelling and inline predictions.
+  Words run together are split ("samplentext" offers "sample text").
 - Slide to type, a space-bar trackpad, Smart Punctuation, the "." shortcut and text replacements.
 - Select text and press Shift to change its case: lowercase, Title Case, ALL CAPS, then back.
 - Shows Math Results as you type a sum (`12*4=`).
@@ -38,7 +39,7 @@ Requires Android 8.0 or newer. The Glass look's background blur needs Android 12
 - **Glass** (translucent, blurred, rounded) or **Classic** appearance, light or dark. Glass has
   iOS 27's **Tint Amount** slider (More Clear to More Tinted) and **Show Borders**.
 - **Standard** (iPhone) or **Extended** key layout, the latter with comma and period keys and
-  long-press symbol hints.
+  long-press symbol hints. Symbol keys hold Gboard's extra symbols too (∞, ≤, ±, ₱ …).
 - Optional number row, one-handed mode and adjustable keyboard height.
 - A settings app laid out like iOS Settings, with the same Keyboard page, swipe-back navigation
   and iOS-style switches and sliders.
@@ -51,7 +52,8 @@ Requires Android 8.0 or newer. The Glass look's background blur needs Android 12
 - **Clipboard history** with pinning, as a list or a grid of cards. Drag pinned items into your
   own order, and choose whether pinned or recent items come first.
 - **Emoji panel** with search, skin tones and emoji suggestions while you type.
-- **Emoji Kitchen** stickers (optional; the pictures load from Google's servers).
+- **Emoji Kitchen** stickers (optional; the pictures load from Google's servers); sending one
+  replaces the emoji it was made from.
 - **Toolbar** with emoji, clipboard, text editing (arrows, select, copy, paste) and voice typing.
 - Physical keyboard support.
 

@@ -288,13 +288,15 @@ object Accents {
         "U" to "U Ù Ú Û Ü Ǔ Ũ Ū Ű Ů Ų", "W" to "W Ŵ", "Y" to "Y Ý Ŷ Ÿ", "Z" to "Z Ź Ž Ż",
     ).mapValues { (k, v) -> Variants(v.split(' '), lower.getValue(k.lowercase()).opensLeft) }
 
+    // Symbols: iOS's sets, plus everything Gboard offers on the same key (gboard.apk's symbol
+    // pages and number row), its extras after iOS's.
     private val punctuation = mapOf(
         "!" to Variants(listOf("¡", "!"), false),
         "\"" to Variants(listOf("”", "“", "„", "»", "«", "\""), true),
-        "%" to Variants(listOf("‰", "%"), false),
+        "%" to Variants(listOf("‰", "%", "℅"), false),
         "&" to Variants(listOf("§", "&"), false),
-        "'" to Variants(listOf("’", "‘", "`", "'"), true),
-        "-" to Variants(listOf("–", "—", "•", "-"), false),
+        "'" to Variants(listOf("’", "‘", "`", "'", "‚", "‹", "›"), true),
+        "-" to Variants(listOf("–", "—", "•", "-", "_", "·"), false),
         "." to Variants(listOf("…", "."), false),
         "/" to Variants(listOf("\\", "/"), false),
         // Digits: superscripts and fractions, as on Gboard.
@@ -309,8 +311,21 @@ object Accents {
         "8" to Variants(listOf("8", "⁸"), true),
         "9" to Variants(listOf("9", "⁹"), true),
         "?" to Variants(listOf("¿", "?"), false),
-        "=" to Variants(listOf("=", "≠", "≈"), true),
-        "$" to Variants(listOf("$", "¢"), false),
+        "=" to Variants(listOf("=", "≠", "≈", "∞"), true),
+        "$" to Variants(listOf("$", "¢", "£", "€", "¥", "₱", "₹"), false),
+        // Gboard only.
+        "#" to Variants(listOf("#", "№"), false),
+        "+" to Variants(listOf("+", "±"), true),
+        "(" to Variants(listOf("(", "<", "{", "["), false),
+        ")" to Variants(listOf(")", ">", "}", "]"), true),
+        "*" to Variants(listOf("*", "†", "‡", "★"), false),
+        "<" to Variants(listOf("<", "‹", "≤", "«"), false),
+        ">" to Variants(listOf(">", "›", "≥", "»"), true),
+        "•" to Variants(listOf("•", "♪", "♥", "♠", "♦", "♣"), true),
+        "π" to Variants(listOf("π", "Π", "μ", "Ω"), true),
+        "¶" to Variants(listOf("¶", "§"), true),
+        "^" to Variants(listOf("^", "↑", "↓", "←", "→"), false),
+        "°" to Variants(listOf("°", "′", "″"), true),
     )
 
     fun forOutput(s: String): Variants? = lower[s] ?: upper[s] ?: punctuation[s]

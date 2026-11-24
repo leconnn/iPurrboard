@@ -17,8 +17,13 @@ class Predictor(
     /** Suggestions with nothing typed: at a sentence start, and mid-sentence (the keyboard's language). */
     private val startWords: List<String> = Language.ENGLISH.startWords,
     private val midWords: List<String> = Language.ENGLISH.midWords,
+    /** The user's own words (added or learned) starting with a prefix, as they are written. */
+    private val userWords: (prefix: String) -> List<String> = { emptyList() },
 ) {
     enum class Kind { LITERAL, CORRECTION, COMPLETION, REPLACEMENT, NEXT_WORD, SWIPE, EMOJI }
+
+    /** The keyboard's shift: suggestions follow it like the typed letters do. */
+    enum class Caps { NONE, SHIFT, LOCK }
 
     /** Lowercase words never suggested (Block Offensive Words); typing them still works. */
     @Volatile var blocked: Set<String> = emptySet()
@@ -41,12 +46,25 @@ class Predictor(
         rejected: Set<String> = emptySet(),
         emojiSuggestions: Boolean = false,
         touches: List<Corrector.Touch?>? = null,
+        caps: Caps = Caps.NONE,
     ): Slots {
-        val slots = predictWords(partial, prevWord, sentenceStart, autocorrect, replacements, rejected, touches)
+        val slots = cased(predictWords(partial, prevWord, sentenceStart, autocorrect, replacements, rejected, touches), partial, caps)
         // Like iOS, a word with a matching emoji offers it on the right.
         if (!emojiSuggestions || partial.isEmpty() || slots.centre?.kind == Kind.REPLACEMENT) return slots
         val e = emoji?.forWord(partial)?.firstOrNull() ?: return slots
         return slots.copy(right = Slot(e, Kind.EMOJI))
+    }
+
+    /**
+     * Suggested words in the keyboard's case: ALL CAPS with caps lock; a capital first letter
+     * with Shift on before anything is typed (once letters are typed, their case already decides,
+     * see [Corrector.matchCase]). The typed word and text replacements stay as they are.
+     */
+    private fun cased(slots: Slots, partial: String, caps: Caps): Slots {
+        if (caps == Caps.NONE || (caps == Caps.SHIFT && partial.isNotEmpty())) return slots
+        fun Slot?.c() = this?.takeIf { it.kind == Kind.COMPLETION || it.kind == Kind.CORRECTION || it.kind == Kind.NEXT_WORD }
+            ?.let { Slot(if (caps == Caps.LOCK) it.text.uppercase() else capitalise(it.text), it.kind) } ?: this
+        return Slots(slots.left.c(), slots.centre.c(), slots.right.c())
     }
 
     private fun predictWords(
@@ -78,7 +96,9 @@ class Predictor(
         // Completions that usually follow the previous word come first ("I am go" -> "going").
         val lower = partial.lowercase()
         val fromContext = likely.filter { it.startsWith(lower) && it != lower }.mapNotNull { dict.displayForm(it) }
-        val completions = (fromContext + dict.completions(partial, 12)).distinctBy { it.lowercase() }.filter(::allowed)
+        // The user's own words (names, slang, words added in Settings) complete too.
+        val mine = userWords(partial).filter(::allowed)
+        val completions = (fromContext + mine + dict.completions(partial, 12)).distinctBy { it.lowercase() }.filter(::allowed)
         // The word with its apostrophe ("its" -> "it's", "whens" -> "when's") is always offered,
         // as Gboard does, even when the typed word is a word too.
         val contraction = corrector.contraction(partial)?.takeIf(::allowed)
@@ -89,8 +109,10 @@ class Predictor(
         }
         // No autocorrection: the typed word stays (quoted on the left); the two likeliest
         // completions or corrections fill the rest, the contraction first.
-        val alternatives = listOfNotNull(contraction) +
-            ranked(partial, completions, touches, context, exclude = setOfNotNull(contraction?.lowercase()), n = if (contraction != null) 1 else 2)
+        // A word of the user's typed in another case ("iphone") offers how they write it ("iPhone").
+        val first = contraction ?: mine.firstOrNull { it.equals(partial, ignoreCase = true) && it != partial }
+        val alternatives = listOfNotNull(first) +
+            ranked(partial, completions, touches, context, exclude = setOfNotNull(first?.lowercase()), n = if (first != null) 1 else 2)
         return Slots(Slot(partial, Kind.LITERAL), alternatives.getOrNull(0)?.let { Slot(it, Kind.COMPLETION) },
             alternatives.getOrNull(1)?.let { Slot(it, Kind.COMPLETION) })
     }
@@ -115,12 +137,15 @@ class Predictor(
         }
         for (w in completions) {
             val i = dict.indexOf(w)
-            val freq = if (i >= 0) dict.freq[i] else 0
+            // The user's own words rank like a common word.
+            val freq = if (i >= 0) dict.freq[i] else USER_WORD_FREQ
             val missing = (w.length - partial.length).coerceAtLeast(1)
             val bonus = if (w.lowercase() in context) Corrector.CONTEXT_BONUS else 0.0
             offer(w, corrector.score(freq, minOf(missing * COMPLETION_COST, MAX_COMPLETION_COST)) + bonus)
         }
         for (c in corrector.candidates(partial, Corrector.MAX_COST, 6, touches, context)) offer(c.word, c.score)
+        // Two words run together ("samplentext" -> "sample text").
+        corrector.split(partial)?.let { offer(it.word, it.score) }
         return pool.values.sortedByDescending { it.second }.take(n).map { Corrector.matchCase(partial, it.first) }
     }
 
@@ -130,5 +155,7 @@ class Predictor(
         /** Cost per letter a completion still needs, and its cap (in the corrector's cost units). */
         const val COMPLETION_COST = 0.25f
         const val MAX_COMPLETION_COST = 0.75f
+        /** Frequency a word of the user's that isn't in the dictionary ranks with: one of the most common words', as Gboard puts personal words first. */
+        const val USER_WORD_FREQ = 5_000_000
     }
 }

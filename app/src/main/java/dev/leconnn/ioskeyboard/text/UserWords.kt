@@ -75,6 +75,22 @@ class UserWords private constructor(context: Context) : SQLiteOpenHelper(
         }
     }
 
+    /**
+     * Known words of the user's (added in Settings, or typed often) that start with [prefix],
+     * most used first, as they are written; the word itself too when it is written differently
+     * ("iphone" -> "iPhone").
+     */
+    fun completions(prefix: String, n: Int = 3): List<String> {
+        if (prefix.isEmpty()) return emptyList()
+        awaitLoad()
+        val p = prefix.lowercase()
+        return synchronized(this) {
+            counts.entries.asSequence()
+                .filter { it.value >= LEARN_AFTER && it.key.startsWith(p) && it.key !in rejectedWords && (it.key != p || it.key in shown) }
+                .sortedByDescending { it.value }.take(n).map { display(it.key) }.toList()
+        }
+    }
+
     /** How [w] (lowercase) is written. */
     private fun display(w: String) = shown[w] ?: w
 

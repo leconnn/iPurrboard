@@ -969,8 +969,36 @@ class IosKeyboardService : InputMethodService(), KeyboardView.Listener {
                 }
                 val content = android.view.inputmethod.InputContentInfo(shared,
                     android.content.ClipDescription("${sticker.left}${sticker.right} sticker", arrayOf("image/png")))
-                ic.commitContent(content, android.view.inputmethod.InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION, null)
+                // The emoji the sticker was made from, read before sending (see below).
+                val sources = stickerSources(ic, sticker)
+                if (!ic.commitContent(content, android.view.inputmethod.InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION, null)) return@post
+                // Sent: the emoji that made it go, as on Gboard. Only if the text still ends with
+                // exactly them (the app may have put something at the cursor with the image).
+                if (sources != null && ic.getTextBeforeCursor(sources.length, 0)?.toString() == sources) {
+                    ic.deleteSurroundingText(sources.length, 0)
+                }
+                showSuggestions()
             }
+        }
+    }
+
+    /**
+     * The emoji just before the cursor that [sticker] was made from (one, or the two typed in a
+     * row), as whole graphemes so skin tones and joined emoji go whole; null if none.
+     */
+    private fun stickerSources(ic: android.view.inputmethod.InputConnection, sticker: dev.leconnn.ioskeyboard.text.EmojiKitchen.Sticker): String? {
+        val before = ic.getTextBeforeCursor(32, 0)?.toString().orEmpty()
+        if (before.isEmpty()) return null
+        val it = android.icu.text.BreakIterator.getCharacterInstance().apply { setText(before) }
+        val end = before.length
+        val start = it.preceding(end).takeIf { p -> p != android.icu.text.BreakIterator.DONE } ?: return null
+        val prevStart = it.preceding(start).takeIf { p -> p != android.icu.text.BreakIterator.DONE }
+        val last = before.substring(start, end)
+        val prev = prevStart?.let { before.substring(it, start) }
+        return when (dev.leconnn.ioskeyboard.text.EmojiKitchen.typedSources(sticker, last, prev)) {
+            2 -> before.substring(prevStart!!, end)
+            1 -> last
+            else -> null
         }
     }
 
@@ -1333,9 +1361,16 @@ class IosKeyboardService : InputMethodService(), KeyboardView.Listener {
         if (dy != 0) {
             val multiLine = (currentInputEditorInfo?.inputType ?: 0) and InputType.TYPE_TEXT_FLAG_MULTI_LINE != 0
             if (!multiLine) return
-            val side = if (dy > 0) ic.getTextAfterCursor(CURSOR_PROBE * 8, 0) else ic.getTextBeforeCursor(CURSOR_PROBE * 8, 0)
-            val lines = side?.count { it == '\n' } ?: kotlin.math.abs(dy)
-            press(if (dy > 0) KeyEvent.KEYCODE_DPAD_DOWN else KeyEvent.KEYCODE_DPAD_UP, minOf(kotlin.math.abs(dy), lines))
+            // One line at a time, wrapped lines included (the keyboard can't see where text wraps,
+            // so it lets the field move). On the first or last line an arrow moves the cursor to
+            // the start or end of the text; once there, nothing is left that way and the moves
+            // stop, so an arrow never takes focus out of the field. Key events drop the cached
+            // text, so each read sees where the last arrow left the cursor.
+            repeat(kotlin.math.abs(dy)) {
+                val side = if (dy > 0) ic.getTextAfterCursor(1, 0) else ic.getTextBeforeCursor(1, 0)
+                if (side != null && side.isEmpty()) return
+                press(if (dy > 0) KeyEvent.KEYCODE_DPAD_DOWN else KeyEvent.KEYCODE_DPAD_UP, 1)
+            }
         }
     }
 
@@ -1396,6 +1431,15 @@ class IosKeyboardService : InputMethodService(), KeyboardView.Listener {
 
     override fun onShiftChanged(state: Glyphs.ShiftState) {
         manualShift = state != Glyphs.ShiftState.OFF
+    }
+
+    /** Suggestions follow the shift key: a capital with Shift, all caps with caps lock. */
+    override fun onShiftShown(state: Glyphs.ShiftState) {
+        composer.caps = when (state) {
+            Glyphs.ShiftState.LOCKED -> dev.leconnn.ioskeyboard.text.Predictor.Caps.LOCK
+            Glyphs.ShiftState.ON -> dev.leconnn.ioskeyboard.text.Predictor.Caps.SHIFT
+            else -> dev.leconnn.ioskeyboard.text.Predictor.Caps.NONE
+        }
     }
 
     override fun onOneHandedOff() {
